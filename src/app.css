@@ -7,6 +7,9 @@
   --accent-bg: rgba(47, 111, 179, 0.08);
   --error: #a02525;
   --error-bg: #fbeaea;
+  --warning: #8a5a00;
+  --warning-bg: #fdf3dc;
+  --ok: #2e7d4f;
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
   font: 16px/1.5 var(--sans);
@@ -25,6 +28,9 @@
     --accent-bg: rgba(124, 178, 235, 0.1);
     --error: #f2a3a3;
     --error-bg: #3a1c1c;
+    --warning: #f0c36b;
+    --warning-bg: #3a2f17;
+    --ok: #6fcf97;
   }
 }
 

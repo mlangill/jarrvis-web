@@ -1,9 +1,8 @@
 // Loading a user's delimited text file into DuckDB as the working table.
 import { sqlIdent, sqlString, type Sql } from './sql'
 
-/** Name of the table that holds the most recently loaded file. */
+/** Default table for a loaded file. */
 export const INPUT_TABLE = 'input_table'
-const STAGING_TABLE = 'input_table_staging'
 
 const SUPPORTED = /\.(tsv|tab|txt|csv)(\.gz)?$/i
 
@@ -18,6 +17,13 @@ export interface LoadedTable {
   columns: Column[]
 }
 
+export interface LoadOptions {
+  /** Table to load into, replacing it. Defaults to INPUT_TABLE. */
+  table?: string
+  /** Read every column as text, leaving type checks to the caller (keeps IDs like "007" intact). */
+  allVarchar?: boolean
+}
+
 /** A problem with the user's file, with a message fit to show them. */
 export class LoadError extends Error {
   override name = 'LoadError'
@@ -27,17 +33,27 @@ let uploadCounter = 0
 let queue: Promise<unknown> = Promise.resolve()
 
 /**
- * Read a TSV, CSV or plain-text table (optionally gzipped) into INPUT_TABLE,
- * replacing whatever was loaded before. The first line must be a header.
- * Calls run one at a time, since they share the staging and input tables.
+ * Read a TSV, CSV or plain-text table (optionally gzipped) into a table, replacing whatever
+ * was loaded there before. The first line must be a header. Calls run one at a time.
  */
-export function loadTable(sql: Sql, fileName: string, data: Uint8Array | File): Promise<LoadedTable> {
-  const run = queue.then(() => loadTableNow(sql, fileName, data))
+export function loadTable(
+  sql: Sql,
+  fileName: string,
+  data: Uint8Array | File,
+  options: LoadOptions = {},
+): Promise<LoadedTable> {
+  const run = queue.then(() => loadTableNow(sql, fileName, data, options))
   queue = run.catch(() => undefined)
   return run
 }
 
-async function loadTableNow(sql: Sql, fileName: string, data: Uint8Array | File): Promise<LoadedTable> {
+async function loadTableNow(
+  sql: Sql,
+  fileName: string,
+  data: Uint8Array | File,
+  { table = INPUT_TABLE, allVarchar = false }: LoadOptions,
+): Promise<LoadedTable> {
+  const STAGING_TABLE = `${table}__staging`
   const match = SUPPORTED.exec(fileName)
   if (!match) {
     throw new LoadError(
@@ -63,7 +79,7 @@ async function loadTableNow(sql: Sql, fileName: string, data: Uint8Array | File)
       const delimArg = delim === null ? '' : `, delim = ${sqlString(delim)}`
       await sql.query(
         `CREATE OR REPLACE TABLE ${sqlIdent(STAGING_TABLE)} AS
-         SELECT * FROM read_csv(${sqlString(internalName)}, header = true, compression = '${compression}'${delimArg})`,
+         SELECT * FROM read_csv(${sqlString(internalName)}, header = true, compression = '${compression}'${delimArg}${allVarchar ? ', all_varchar = true' : ''})`,
       )
       if (i === delims.length - 1) return
       const cols = await sql.query(`DESCRIBE ${sqlIdent(STAGING_TABLE)}`)
@@ -94,19 +110,21 @@ async function loadTableNow(sql: Sql, fileName: string, data: Uint8Array | File)
     throw new LoadError(`"${fileName}" has a header but no data rows.`)
   }
 
-  await sql.query(`DROP TABLE IF EXISTS ${sqlIdent(INPUT_TABLE)}`)
-  await sql.query(`ALTER TABLE ${sqlIdent(STAGING_TABLE)} RENAME TO ${sqlIdent(INPUT_TABLE)}`)
+  await sql.query(`DROP TABLE IF EXISTS ${sqlIdent(table)}`)
+  await sql.query(`ALTER TABLE ${sqlIdent(STAGING_TABLE)} RENAME TO ${sqlIdent(table)}`)
 
-  const described = await sql.query<{ column_name: string; column_type: string }>(
-    `DESCRIBE ${sqlIdent(INPUT_TABLE)}`,
-  )
-  const columns = described.map((c) => ({ name: c.column_name, type: c.column_type }))
-  return { fileName, rowCount, columns }
+  return { fileName, rowCount, columns: await describeTable(sql, table) }
 }
 
-/** The first `limit` rows of the loaded table. */
-export async function previewRows(sql: Sql, limit = 100): Promise<Record<string, unknown>[]> {
-  return sql.query(`SELECT * FROM ${sqlIdent(INPUT_TABLE)} LIMIT ${Math.max(0, Math.floor(limit))}`)
+/** Column names and types of a table. */
+export async function describeTable(sql: Sql, table: string): Promise<Column[]> {
+  const described = await sql.query<{ column_name: string; column_type: string }>(`DESCRIBE ${sqlIdent(table)}`)
+  return described.map((c) => ({ name: c.column_name, type: c.column_type }))
+}
+
+/** The first `limit` rows of a table. */
+export async function previewRows(sql: Sql, limit = 100, table = INPUT_TABLE): Promise<Record<string, unknown>[]> {
+  return sql.query(`SELECT * FROM ${sqlIdent(table)} LIMIT ${Math.max(0, Math.floor(limit))}`)
 }
 
 function firstLine(err: unknown): string {

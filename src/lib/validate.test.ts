@@ -1,0 +1,194 @@
+import { readFileSync } from 'node:fs'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { createNodeSql } from '../test/nodeSql'
+import { loadTable, previewRows } from './load'
+import type { Sql } from './sql'
+import {
+  crossCheck,
+  hasErrors,
+  META,
+  META_RAW,
+  STRAT,
+  STRAT_RAW,
+  validateMetadata,
+  validateStratified,
+  type Issue,
+} from './validate'
+
+const bytes = (s: string) => new TextEncoder().encode(s)
+const testFile = (p: string) => new Uint8Array(readFileSync(new URL(`../../test-data/${p}`, import.meta.url)))
+const tsv = (...rows: string[][]) => bytes(rows.map((r) => r.join('\t')).join('\n'))
+
+let sql: Sql
+beforeAll(async () => {
+  sql = await createNodeSql()
+})
+
+async function strat(name: string, data: Uint8Array) {
+  const t = await loadTable(sql, name, data, { table: STRAT_RAW, allVarchar: true })
+  return validateStratified(sql, t.columns)
+}
+async function meta(name: string, data: Uint8Array) {
+  const t = await loadTable(sql, name, data, { table: META_RAW, allVarchar: true })
+  return validateMetadata(sql, t.columns)
+}
+const errors = (issues: Issue[]) => issues.filter((i) => i.severity === 'error').map((i) => i.message)
+const warnings = (issues: Issue[]) => issues.filter((i) => i.severity === 'warning').map((i) => i.message)
+
+const HEADER = ['Sample', 'Genus', 'Gene', 'Contribution']
+
+describe('validateStratified', () => {
+  it('accepts the TSD test subset', async () => {
+    const r = await strat('tsd.tsv', testFile('jarrvis/TSD-EC-stratified-subset.tsv'))
+    expect(r.issues).toEqual([
+      expect.objectContaining({ severity: 'info', message: expect.stringMatching(/^270 sample \/ taxon \/ function combinations appear more than once/) }),
+    ])
+    expect(r.summary).toEqual({ rows: 3580, samples: 10, taxa: expect.any(Number), functions: 5 })
+  })
+
+  it('builds the clean table with trimmed text and numeric contributions', async () => {
+    const r = await strat('t.tsv', tsv(HEADER, [' S1 ', 'g__A', 'EC:1', ' 2.5 '], ['S2', '', 'EC:1', '1e-3']))
+    expect(hasErrors(r.issues)).toBe(false)
+    expect(await previewRows(sql, 10, STRAT)).toEqual([
+      { sample: 'S1', taxon: 'g__A', function: 'EC:1', contribution: 2.5 },
+      { sample: 'S2', taxon: 'unclassified', function: 'EC:1', contribution: 0.001 },
+    ])
+    expect(warnings(r.issues)).toEqual([expect.stringMatching(/1 row has no taxon/)])
+  })
+
+  it('keeps sample IDs with leading zeros as text', async () => {
+    await strat('t.tsv', tsv(HEADER, ['007', 'g__A', 'EC:1', '1']))
+    expect(await previewRows(sql, 1, STRAT)).toEqual([expect.objectContaining({ sample: '007' })])
+  })
+
+  it('rejects the wrong number of columns', async () => {
+    const r = await strat('t.tsv', tsv(['a', 'b', 'c'], ['1', '2', '3']))
+    expect(errors(r.issues)).toEqual([expect.stringMatching(/Expected 4 columns.*found 3 columns: a, b, c/)])
+    expect(r.summary).toBeUndefined()
+  })
+
+  it.each([
+    ['picrust2/metagenome_contrib.tsv.gz', /PICRUSt2 contributions output/],
+    ['picrust2/metagenome_contrib_legacy.tsv.gz', /legacy PICRUSt2/],
+    ['picrust2/pred_metagenome_strat.tsv.gz', /PICRUSt2 wide stratified/],
+    ['picrust2/path_abun_strat.tsv.gz', /PICRUSt2 wide stratified/],
+    ['humann2/humann2_strat_example.tsv.gz', /HUMAnN stratified/],
+  ])('recognizes %s as another format', async (path, pattern) => {
+    const r = await strat(path.split('/').pop()!, testFile(path))
+    expect(errors(r.issues)).toEqual([expect.stringMatching(pattern)])
+  })
+
+  it('reports non-numeric contributions with examples', async () => {
+    const r = await strat('t.tsv', tsv(HEADER, ['S1', 'g__A', 'EC:1', '1.5'], ['S1', 'g__B', 'EC:1', 'abc'], ['S2', 'g__A', 'EC:1', '2,5']))
+    expect(errors(r.issues)).toEqual([expect.stringMatching(/^2 rows have a contribution.*isn't a number\.$/)])
+    expect(r.issues[0].examples).toEqual(expect.arrayContaining(['abc', '2,5']))
+  })
+
+  it('hints at column order when no contribution is numeric', async () => {
+    const r = await strat('t.tsv', tsv(['Sample', 'Gene', 'Contribution', 'Genus'], ['S1', 'EC:1', '1.5', 'g__A']))
+    expect(errors(r.issues)[0]).toMatch(/Check the column order/)
+  })
+
+  it('treats empty and NA contributions as missing, not malformed', async () => {
+    const r = await strat('t.tsv', tsv(HEADER, ['S1', 'g__A', 'EC:1', '1'], ['S1', 'g__B', 'EC:1', 'NA'], ['S1', 'g__C', 'EC:1', '']))
+    expect(errors(r.issues)).toEqual([])
+    expect(warnings(r.issues)).toEqual([expect.stringMatching(/2 rows have no contribution value/)])
+    expect(r.summary?.rows).toBe(1)
+  })
+
+  it('rejects rows without a sample or function', async () => {
+    const r = await strat('t.tsv', tsv(HEADER, ['', 'g__A', 'EC:1', '1'], ['S1', 'g__A', ' ', '1']))
+    expect(errors(r.issues)).toEqual([
+      expect.stringMatching(/1 row has no sample ID \(column 1, "Sample"\)/),
+      expect.stringMatching(/1 row has no function \(column 3, "Gene"\)/),
+    ])
+  })
+
+  it('warns about negative contributions and notes duplicate rows', async () => {
+    const r = await strat('t.tsv', tsv(HEADER, ['S1', 'g__A', 'EC:1', '-1'], ['S1', 'g__A', 'EC:1', '2']))
+    expect(warnings(r.issues)).toEqual([expect.stringMatching(/1 row has a negative contribution/)])
+    expect(r.issues[1]).toMatchObject({ severity: 'info', examples: ['S1 / g__A / EC:1'] })
+    expect(r.issues[1].message).toMatch(/1 sample \/ taxon \/ function combination appears more than once/)
+  })
+
+  it('rejects a file without a header line', async () => {
+    const r = await strat('t.tsv', tsv(['S1', 'g__A', 'EC:1', '0.5'], ['S2', 'g__A', 'EC:1', '1']))
+    expect(errors(r.issues)).toEqual([expect.stringMatching(/looks like data rather than a header/)])
+  })
+
+  it('rejects a table where every contribution is missing', async () => {
+    const r = await strat('t.tsv', tsv(HEADER, ['S1', 'g__A', 'EC:1', 'NA']))
+    expect(errors(r.issues)).toEqual(['No rows have a contribution value.'])
+  })
+
+  it('removes a previous clean table when the new file has errors', async () => {
+    await strat('good.tsv', tsv(HEADER, ['S1', 'g__A', 'EC:1', '1']))
+    await strat('bad.tsv', tsv(['a', 'b'], ['1', '2']))
+    await expect(sql.query(`SELECT * FROM ${STRAT}`)).rejects.toThrow()
+  })
+})
+
+describe('validateMetadata', () => {
+  it('accepts the TSD metadata', async () => {
+    const r = await meta('m.txt', testFile('jarrvis/TSD-sample-metadata.txt'))
+    expect(r.issues).toEqual([])
+    expect(r.summary).toEqual({ samples: 10, idColumn: 'sample_id', groupColumns: [{ name: 'type', levels: 2 }] })
+  })
+
+  it('uses the first column as sample_id whatever it is called', async () => {
+    const r = await meta('m.tsv', tsv(['SampleID', 'month', 'depth'], ['A1', 'Jan', '5'], ['A2', 'Feb', '']))
+    expect(r.summary?.idColumn).toBe('SampleID')
+    expect(await previewRows(sql, 10, META)).toEqual([
+      { sample_id: 'A1', month: 'Jan', depth: '5' },
+      { sample_id: 'A2', month: 'Feb', depth: null },
+    ])
+  })
+
+  it('rejects a single column', async () => {
+    const r = await meta('m.tsv', tsv(['sample_id'], ['A1']))
+    expect(errors(r.issues)).toEqual([expect.stringMatching(/at least one column to group samples by/)])
+  })
+
+  it('rejects duplicate and blank sample IDs', async () => {
+    const r = await meta('m.tsv', tsv(['sample_id', 'type'], ['A1', 'x'], ['A1', 'y'], ['', 'z']))
+    expect(errors(r.issues)).toEqual([
+      expect.stringMatching(/1 row has no sample ID/),
+      expect.stringMatching(/1 sample ID appears more than once/),
+    ])
+    expect(r.issues[1].examples).toEqual(['A1'])
+  })
+
+  it('warns about empty grouping columns and leaves them out', async () => {
+    const r = await meta('m.tsv', tsv(['sample_id', 'type', 'notes'], ['A1', 'x', ''], ['A2', 'y', '']))
+    expect(warnings(r.issues)).toEqual([expect.stringMatching(/Column "notes" is empty/)])
+    expect(r.summary?.groupColumns).toEqual([{ name: 'type', levels: 2 }])
+  })
+})
+
+describe('crossCheck', () => {
+  it('matches the TSD table and metadata completely', async () => {
+    await strat('tsd.tsv', testFile('jarrvis/TSD-EC-stratified-subset.tsv'))
+    await meta('m.txt', testFile('jarrvis/TSD-sample-metadata.txt'))
+    expect(await crossCheck(sql)).toEqual({ issues: [], summary: { matched: 10 } })
+  })
+
+  it('warns about samples missing on either side', async () => {
+    await strat('t.tsv', tsv(HEADER, ['S1', 'g__A', 'EC:1', '1'], ['S2', 'g__A', 'EC:1', '1']))
+    await meta('m.tsv', tsv(['sample_id', 'type'], ['S1', 'a'], ['S3', 'b']))
+    const r = await crossCheck(sql)
+    expect(r.summary).toEqual({ matched: 1 })
+    expect(warnings(r.issues)).toEqual([
+      "1 sample in the table isn't in the metadata and will be left out.",
+      '1 sample in the metadata has no rows in the table.',
+    ])
+    expect(r.issues.map((i) => i.examples)).toEqual([['S2'], ['S3']])
+  })
+
+  it('fails when nothing matches, and points out case differences', async () => {
+    await strat('t.tsv', tsv(HEADER, ['s1', 'g__A', 'EC:1', '1']))
+    await meta('m.tsv', tsv(['sample_id', 'type'], ['S1', 'a']))
+    const r = await crossCheck(sql)
+    expect(errors(r.issues)).toEqual([expect.stringMatching(/None of the 1 sample.*check the capitalization/)])
+    expect(r.issues[0].examples).toEqual(['table: s1', 'metadata: S1'])
+  })
+})

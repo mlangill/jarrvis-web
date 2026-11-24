@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-This repo is a rebuild of JarrVis (https://github.com/dhwanidesai/JarrVis; preprint: https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1). JarrVis visualizes stratified microbiome function tables (sample groups → taxa → functions). **Read `PLAN.md` before starting work**: it has the scope, the architecture and the order of the first prompts. The app (Vite + Svelte 5 + TypeScript + DuckDB-WASM) can load a TSV, CSV or TXT file (optionally gzipped) into DuckDB and preview it.
+This repo is a rebuild of JarrVis (https://github.com/dhwanidesai/JarrVis; preprint: https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1). JarrVis visualizes stratified microbiome function tables (sample groups → taxa → functions). **Read `PLAN.md` before starting work**: it has the scope, the architecture and the order of the first prompts. The app (Vite + Svelte 5 + TypeScript + DuckDB-WASM) loads a 4-column stratified table and a sample metadata file, validates both and checks that their sample IDs match. There are no views yet.
 
 ## Commands
 
@@ -21,6 +21,11 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which checks, builds and 
 - `src/lib/sql.ts`: the `Sql` interface (`query`, `registerFile`, `dropFile`) that all data-layer code takes as a parameter. Write data logic against it, never against DuckDB-WASM directly, so it stays testable in Node.
 - `src/test/nodeSql.ts`: the `Sql` implementation for tests. It uses DuckDB-WASM's synchronous Node build (`duckdb-node-blocking.cjs`), so tests run the same engine and SQL as the browser. The async Node worker build doesn't load, so don't switch to it. Tests register files as byte buffers only.
 - `src/lib/load.ts`: `loadTable` reads a file into `input_table`. Calls are queued so they run one at a time. `.txt` files are read as tab-separated first, and DuckDB guesses the delimiter only if that yields one column (its guess picks `;` on taxonomy strings). A `.gz` file that is not actually gzipped is read as plain text. It loads into a staging table first and only swaps it in once it passes checks, so a rejected file leaves the previous table intact. Problems the user should see are thrown as `LoadError`. The file is registered under a generated name (keeping the extension, so DuckDB detects `.gz`), and that name is replaced with the user's file name in error messages.
+- `src/lib/validate.ts`: the version-1 input contract. Both files are loaded as all-text tables (`strat_raw`, `metadata_raw`, via `loadTable(..., { allVarchar: true })`), so IDs keep leading zeros. `validateStratified` and `validateMetadata` return `Issue`s, with severity `error` (blocks use), `warning` or `info`. Only when there are no errors do they build the clean tables that views should query:
+  - `strat(sample, taxon, function, contribution DOUBLE)`: text trimmed, empty taxa become `unclassified`, rows with an empty or NA contribution are dropped.
+  - `metadata(sample_id, <group columns>)`: the first column is renamed to `sample_id`.
+  A failed validation drops the old clean table. `crossCheck` compares sample IDs between the two tables. The table is read by column position, not by header name. Known other formats (PICRUSt2 contrib, legacy, or wide; HUMAnN) are recognized and get an explanatory error.
+- `src/App.svelte` / `src/components/InputPanel.svelte`: one panel per input file. Loading a file reruns that file's validation and then `crossCheck`.
 - `src/lib/db.ts`: the one shared DuckDB instance (`getDb()`) and the browser `Sql` (`getSql()`). Browser `File`s are registered with `BROWSER_FILEREADER`, so large files are read lazily instead of copied into memory. The wasm and worker bundles are imported with `?url`, so Vite serves them from this site rather than a CDN. Don't switch to the jsDelivr bundles.
 - `vite.config.ts`: `base: './'` keeps asset paths relative, so the build works under the Pages subpath `/jarrvis-web/`. `@duckdb/duckdb-wasm` is excluded from `optimizeDeps`.
 

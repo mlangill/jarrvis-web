@@ -1,5 +1,10 @@
 <script lang="ts">
-  let { onfile, disabled = false }: { onfile: (file: File) => void; disabled?: boolean } = $props()
+  let {
+    onfile,
+    disabled = false,
+    label = 'Choose a file',
+    hint = 'TSV, CSV or TXT, optionally gzipped. The file stays on your computer.',
+  }: { onfile: (file: File) => void; disabled?: boolean; label?: string; hint?: string } = $props()
 
   let dragging = $state(false)
   let input: HTMLInputElement
@@ -35,8 +40,8 @@
       input.value = ''
     }}
   />
-  <strong>Choose a file</strong> or drop it here
-  <span class="hint">TSV, CSV or TXT, optionally gzipped. The file stays on your computer.</span>
+  <span><strong>{label}</strong> or drop it here</span>
+  <span class="hint">{hint}</span>
 </label>
 
 <style>
@@ -45,7 +50,7 @@
     flex-direction: column;
     align-items: center;
     gap: 0.25rem;
-    padding: 2rem 1rem;
+    padding: 1.25rem 1rem;
     border: 2px dashed var(--border);
     border-radius: 8px;
     text-align: center;
