@@ -210,3 +210,107 @@ export async function functionHeatmap(sql: Sql, { groupBy, stat, search = '', to
 
   return { ...info, functions, matchingFunctions: Number(cells[0]?.matching ?? 0), values }
 }
+
+export interface TaxaBarsOptions {
+  groupBy: string
+  level: Level
+  stat: Stat
+  fn: string
+  /** One bar per group (mean or total, per `stat`), or one per sample (its own contribution). */
+  by: 'group' | 'sample'
+  /** Taxa shown individually; the rest are folded into "Other". */
+  topTaxa?: number
+}
+
+export interface Bar {
+  /** Group name, or sample ID. */
+  label: string
+  group: string
+  /** Samples behind the bar: the group size, or 1. */
+  samples: number
+}
+
+export interface BarTaxon {
+  label: string
+  path: string
+}
+
+export interface TaxaBars {
+  bars: Bar[]
+  /** Shown taxa, largest first. Ranked by the sum of group values in both modes, so the set and
+   * its order (and therefore colors) don't change when switching between groups and samples. */
+  taxa: BarTaxon[]
+  /** values[t][b]: taxa[t] in bars[b]. */
+  values: number[][]
+  /** Everything outside the shown taxa, per bar. */
+  other: number[]
+  /** How many taxa were folded into `other`. */
+  otherTaxa: number
+}
+
+/** Contributions of each taxon (collapsed to `level`) to one function, per group or per sample. */
+export async function taxaForFunction(
+  sql: Sql,
+  { groupBy, level, stat, fn, by, topTaxa = 8 }: TaxaBarsOptions,
+): Promise<TaxaBars> {
+  const tx = taxonExprs(level)
+  const ctes = `
+    WITH
+      tx AS (SELECT taxon, ${tx.key} AS tkey, ${tx.label} AS tlabel, ${tx.path} AS tpath FROM ${id(TAXONOMY)}),
+      ${groupCtes(groupBy)},
+      ps AS (
+        SELECT gs.grp, s.sample, tx.tkey, any_value(tx.tlabel) AS tlabel, any_value(tx.tpath) AS tpath,
+               sum(s.contribution) AS total
+        FROM ${id(STRAT)} s JOIN gs ON s.sample = gs.sample_id JOIN tx USING (taxon)
+        WHERE s.function = ${sqlString(fn)}
+        GROUP BY gs.grp, s.sample, tx.tkey
+      ),
+      pg AS (
+        SELECT ps.grp, ps.tkey, ${stat === 'mean' ? 'sum(ps.total) / any_value(n.samples)' : 'sum(ps.total)'} AS value
+        FROM ps JOIN n USING (grp) GROUP BY ps.grp, ps.tkey
+      )`
+  const ranked = await sql.query<{ tkey: string; tlabel: string; tpath: string }>(`${ctes},
+      names AS (SELECT tkey, any_value(tlabel) AS tlabel, any_value(tpath) AS tpath FROM ps GROUP BY tkey)
+    SELECT pg.tkey, any_value(names.tlabel) AS tlabel, any_value(names.tpath) AS tpath
+    FROM pg JOIN names USING (tkey) GROUP BY pg.tkey
+    ORDER BY sum(pg.value) DESC, pg.tkey`)
+
+  const shown = ranked.slice(0, topTaxa)
+  const tIndex = new Map(shown.map((t, i) => [t.tkey, i]))
+
+  let bars: Bar[]
+  let cells: { bar: string; tkey: string; value: number }[]
+  if (by === 'group') {
+    const info = await groupInfo(sql, groupBy)
+    bars = info.groups.map((g) => ({ label: g.name, group: g.name, samples: g.samples }))
+    cells = (await sql.query<{ grp: string; tkey: string; value: number }>(`${ctes} SELECT grp, tkey, value FROM pg`)).map(
+      (c) => ({ bar: c.grp, tkey: c.tkey, value: Number(c.value) }),
+    )
+  } else {
+    const samples = await sql.query<{ sample_id: string; grp: string }>(`
+      WITH ${groupCtes(groupBy)} SELECT sample_id, grp FROM gs ORDER BY grp, sample_id`)
+    bars = samples.map((s) => ({ label: s.sample_id, group: s.grp, samples: 1 }))
+    cells = (await sql.query<{ sample: string; tkey: string; total: number }>(`${ctes} SELECT sample, tkey, total FROM ps`)).map(
+      (c) => ({ bar: c.sample, tkey: c.tkey, value: Number(c.total) }),
+    )
+  }
+
+  const bIndex = new Map(bars.map((b, i) => [b.label, i]))
+  const values = shown.map(() => bars.map(() => 0))
+  const other = bars.map(() => 0)
+  for (const c of cells) {
+    const b = bIndex.get(c.bar)
+    if (b === undefined) continue
+    const t = tIndex.get(c.tkey)
+    if (t === undefined) other[b] += c.value
+    else values[t][b] += c.value
+  }
+
+  return {
+    bars,
+    taxa: shown.map((t) => ({ label: t.tlabel, path: t.tpath })),
+    values,
+    other,
+    otherTaxa: ranked.length - shown.length,
+  }
+}

@@ -21,6 +21,10 @@ export interface ViewState {
   top: number
   /** Heatmap: color scale. */
   scale: HeatScale
+  /** Stacked bar: one bar per group or per sample. */
+  barsBy: 'group' | 'sample'
+  /** Stacked bar: absolute values, or each bar as 100%. */
+  barScale: 'absolute' | 'relative'
 }
 
 export const view: ViewState = $state({
@@ -31,4 +35,6 @@ export const view: ViewState = $state({
   search: '',
   top: 50,
   scale: 'log',
+  barsBy: 'group',
+  barScale: 'absolute',
 })

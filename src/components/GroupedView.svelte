@@ -41,7 +41,7 @@
 <section class="grouped" aria-busy={busy}>
   <div class="head">
     <h2>
-      {#if view.fn}Taxa contributing to <span class="fn">{view.fn}</span>{:else}Contributions by group, taxon and function{/if}
+      {#if view.fn}Table: <span class="fn">{view.fn}</span> by group and taxon{:else}Table: contributions by group, taxon and function{/if}
     </h2>
     {#if view.fn}
       <button type="button" onclick={() => (view.fn = null)}>Show all functions</button>

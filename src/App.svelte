@@ -1,6 +1,7 @@
 <script lang="ts">
   import GroupedView from './components/GroupedView.svelte'
   import Heatmap from './components/Heatmap.svelte'
+  import StackedBar from './components/StackedBar.svelte'
   import ViewControls from './components/ViewControls.svelte'
   import InputPanel, { type PanelState } from './components/InputPanel.svelte'
   import { buildTaxonomy, type Level } from './lib/aggregate'
@@ -149,6 +150,7 @@
   {#if ready && metaSummary}
     <ViewControls groupColumns={metaSummary.groupColumns} {levels} />
     <Heatmap {dataVersion} />
+    <StackedBar {dataVersion} />
     <GroupedView {levels} {dataVersion} />
   {/if}
 

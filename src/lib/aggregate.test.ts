@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createNodeSql } from '../test/nodeSql'
-import { buildTaxonomy, functionHeatmap, groupTable, TAXONOMY } from './aggregate'
+import { buildTaxonomy, functionHeatmap, groupTable, taxaForFunction, TAXONOMY } from './aggregate'
 import { loadTable } from './load'
 import type { Sql } from './sql'
 import { META_RAW, STRAT_RAW, validateMetadata, validateStratified } from './validate'
@@ -173,5 +173,61 @@ describe('functionHeatmap', () => {
     const byGroup = (name: string) => g.rows.filter((r) => r.group === name).reduce((a, r) => a + r.value, 0)
     expect(byGroup('A')).toBeCloseTo(h.values[0][0], 6)
     expect(byGroup('B')).toBeCloseTo(h.values[0][1], 6)
+  })
+})
+
+describe('taxaForFunction', () => {
+  const META = tsv(['sample_id', 'type'], ['S1', 'A'], ['S2', 'A'], ['S3', 'B'])
+  const HEADER = ['sample', 'taxon', 'function', 'contribution']
+  const rows = tsv(HEADER,
+    ['S1', 'g__X;s__x1', 'EC:1', '4'], ['S1', 'g__X;s__x2', 'EC:1', '2'], ['S2', 'g__Y;s__y1', 'EC:1', '1'],
+    ['S3', 'g__Z;s__z1', 'EC:1', '1'], ['S3', 'g__X;s__x1', 'EC:1', '0.5'],
+    ['S1', 'g__Z;s__z1', 'EC:2', '100'],
+  )
+
+  it('gives mean per group for each collapsed taxon, largest first', async () => {
+    await setup(rows, META)
+    const r = await taxaForFunction(sql, { groupBy: 'type', level: 'genus', stat: 'mean', fn: 'EC:1', by: 'group' })
+    expect(r.bars).toEqual([{ label: 'A', group: 'A', samples: 2 }, { label: 'B', group: 'B', samples: 1 }])
+    // X: A = 6/2 = 3, B = 0.5. Z: B = 1. Y: A = 0.5.
+    expect(r.taxa.map((t) => t.label)).toEqual(['X', 'Z', 'Y'])
+    expect(r.values).toEqual([[3, 0.5], [0, 1], [0.5, 0]])
+    expect(r.other).toEqual([0, 0])
+    expect(r.otherTaxa).toBe(0)
+  })
+
+  it('folds taxa beyond the top N into Other', async () => {
+    await setup(rows, META)
+    const r = await taxaForFunction(sql, { groupBy: 'type', level: 'genus', stat: 'sum', fn: 'EC:1', by: 'group', topTaxa: 1 })
+    expect(r.taxa.map((t) => t.label)).toEqual(['X'])
+    expect(r.values).toEqual([[6, 0.5]])
+    expect(r.other).toEqual([1, 1])
+    expect(r.otherTaxa).toBe(2)
+  })
+
+  it('gives one bar per sample, including samples without the function, in group order', async () => {
+    await setup(rows, META)
+    const r = await taxaForFunction(sql, { groupBy: 'type', level: 'species', stat: 'mean', fn: 'EC:2', by: 'sample' })
+    expect(r.bars.map((b) => [b.label, b.group])).toEqual([['S1', 'A'], ['S2', 'A'], ['S3', 'B']])
+    expect(r.values).toEqual([[100, 0, 0]])
+  })
+
+  it('keeps the same taxa in group and sample mode', async () => {
+    await setup(rows, META)
+    const opts = { groupBy: 'type', level: 'species', stat: 'mean', fn: 'EC:1', topTaxa: 2 } as const
+    const g = await taxaForFunction(sql, { ...opts, by: 'group' })
+    const s = await taxaForFunction(sql, { ...opts, by: 'sample' })
+    expect(s.taxa).toEqual(g.taxa)
+    expect(s.values[0]).toEqual([4, 0, 0.5])
+  })
+
+  it('matches the heatmap value for each group on the TSD subset', async () => {
+    await setup(testFile('jarrvis/TSD-EC-stratified-subset.tsv'), testFile('jarrvis/TSD-sample-metadata.txt'))
+    const h = await functionHeatmap(sql, { groupBy: 'type', stat: 'mean', top: 5 })
+    const r = await taxaForFunction(sql, { groupBy: 'type', level: 'genus', stat: 'mean', fn: h.functions[0], by: 'group' })
+    r.bars.forEach((_, b) => {
+      const total = r.values.reduce((a, row) => a + row[b], 0) + r.other[b]
+      expect(total).toBeCloseTo(h.values[0][b], 6)
+    })
   })
 })
