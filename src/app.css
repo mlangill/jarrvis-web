@@ -1,7 +1,12 @@
 :root {
   --text: #2b2a30;
+  --muted: #6b6875;
   --bg: #fff;
   --border: #e5e4e7;
+  --accent: #2f6fb3;
+  --accent-bg: rgba(47, 111, 179, 0.08);
+  --error: #a02525;
+  --error-bg: #fbeaea;
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
   font: 16px/1.5 var(--sans);
@@ -13,8 +18,13 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --text: #e6e4ea;
+    --muted: #a19eab;
     --bg: #16151a;
     --border: #2e2c34;
+    --accent: #7cb2eb;
+    --accent-bg: rgba(124, 178, 235, 0.1);
+    --error: #f2a3a3;
+    --error-bg: #3a1c1c;
   }
 }
 

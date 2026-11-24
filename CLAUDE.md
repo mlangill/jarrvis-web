@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-This repo is a rebuild of JarrVis (https://github.com/dhwanidesai/JarrVis; preprint: https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1). JarrVis visualizes stratified microbiome function tables (sample groups → taxa → functions). **Read `PLAN.md` before starting work**: it has the scope, the architecture and the order of the first prompts. The app is scaffolded (Vite + Svelte 5 + TypeScript + DuckDB-WASM) but has no features yet. There is no test runner yet.
+This repo is a rebuild of JarrVis (https://github.com/dhwanidesai/JarrVis; preprint: https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1). JarrVis visualizes stratified microbiome function tables (sample groups → taxa → functions). **Read `PLAN.md` before starting work**: it has the scope, the architecture and the order of the first prompts. The app (Vite + Svelte 5 + TypeScript + DuckDB-WASM) can load a TSV, CSV or TXT file (optionally gzipped) into DuckDB and preview it.
 
 ## Commands
 
 - `npm run dev`: dev server on http://localhost:5173 (`.claude/launch.json` defines `dev` and `preview` for the browser pane)
-- `npm run check`: type-check (svelte-check plus tsc). CI runs this before building.
+- `npm test`: Vitest, run once. Run one file with `npx vitest run src/lib/load.test.ts`, or one test with `-t "<name>"`.
+- `npm run check`: type-check (svelte-check for the app, tsc for `vite.config.ts` and for the tests via `tsconfig.test.json`). CI runs this before building.
 - `npm run build`: production build to `dist/`
 - `npm run preview`: serve the built `dist/`
 
@@ -17,7 +18,10 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which checks, builds and 
 
 ## Code layout
 
-- `src/lib/db.ts`: the one shared DuckDB instance (`getDb()`). The wasm and worker bundles are imported with `?url`, so Vite serves them from this site rather than a CDN. Don't switch to the jsDelivr bundles.
+- `src/lib/sql.ts`: the `Sql` interface (`query`, `registerFile`, `dropFile`) that all data-layer code takes as a parameter. Write data logic against it, never against DuckDB-WASM directly, so it stays testable in Node.
+- `src/test/nodeSql.ts`: the `Sql` implementation for tests. It uses DuckDB-WASM's synchronous Node build (`duckdb-node-blocking.cjs`), so tests run the same engine and SQL as the browser. The async Node worker build doesn't load, so don't switch to it. Tests register files as byte buffers only.
+- `src/lib/load.ts`: `loadTable` reads a file into `input_table`. It loads into a staging table first and only swaps it in once it passes checks, so a rejected file leaves the previous table intact. Problems the user should see are thrown as `LoadError`. The file is registered under a generated name (keeping the extension, so DuckDB detects `.gz`), and that name is replaced with the user's file name in error messages.
+- `src/lib/db.ts`: the one shared DuckDB instance (`getDb()`) and the browser `Sql` (`getSql()`). Browser `File`s are registered with `BROWSER_FILEREADER`, so large files are read lazily instead of copied into memory. The wasm and worker bundles are imported with `?url`, so Vite serves them from this site rather than a CDN. Don't switch to the jsDelivr bundles.
 - `vite.config.ts`: `base: './'` keeps asset paths relative, so the build works under the Pages subpath `/jarrvis-web/`. `@duckdb/duckdb-wasm` is excluded from `optimizeDeps`.
 
 ## Hard constraints
