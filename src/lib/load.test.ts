@@ -37,9 +37,25 @@ describe('loadTable', () => {
     expect(t.rowCount).toBe(3)
   })
 
-  it('detects the delimiter of a .txt file', async () => {
+  it('reads a .txt file as tab-separated', async () => {
     const t = await loadTable(sql, 'strat.txt', bytes(STRATIFIED_TSV))
     expect(t.columns).toHaveLength(4)
+  })
+
+  it('splits a .txt file on tabs even when values contain semicolons', async () => {
+    const tsd = [
+      'Sample\tGenus\tGene\tContribution',
+      ...Array.from({ length: 50 }, (_, i) =>
+        `S${i % 5}\tp__Firmicutes;c__Bacilli;o__Lactobacillales;f__Streptococcaceae;g__Streptococcus;s__NA\tEC:4.1.1.${i}\t${i * 0.5}`),
+    ].join('\n')
+    const t = await loadTable(sql, 'tsd.txt', bytes(tsd))
+    expect(t.columns.map((c) => c.name)).toEqual(['Sample', 'Genus', 'Gene', 'Contribution'])
+    expect(t.rowCount).toBe(50)
+  })
+
+  it('auto-detects a comma-separated .txt file', async () => {
+    const t = await loadTable(sql, 'commas.txt', bytes('a,b,c\n1,2,3\n4,5,6\n'))
+    expect(t.columns.map((c) => c.name)).toEqual(['a', 'b', 'c'])
   })
 
   it('copes with quotes and spaces in the file name', async () => {
@@ -66,17 +82,33 @@ describe('loadTable', () => {
     await expect(loadTable(sql, 'header.tsv', bytes('a\tb\n'))).rejects.toThrow(/no data rows/)
   })
 
-  it('wraps unreadable gzip as a LoadError', async () => {
-    const err = await loadTable(sql, 'broken.tsv.gz', bytes('not gzip at all')).catch((e) => e)
+  it('reads a .gz file that is actually uncompressed', async () => {
+    const t = await loadTable(sql, 'already-unzipped.tsv.gz', bytes(STRATIFIED_TSV))
+    expect(t.rowCount).toBe(3)
+  })
+
+  it('wraps unreadable files as a LoadError without internal names', async () => {
+    const corrupt = gzipSync(bytes(STRATIFIED_TSV)).subarray(0, 30)
+    const err = await loadTable(sql, 'broken.tsv.gz', corrupt).catch((e) => e)
     expect(err).toBeInstanceOf(LoadError)
-    expect(err.message).toMatch(/^Couldn't read "broken.tsv.gz"/)
+    expect(err.message).toMatch(/"broken.tsv.gz"/)
     expect(err.message).not.toMatch(/upload_/)
+  })
+
+  it('runs overlapping loads one after another', async () => {
+    const [a, b] = await Promise.all([
+      loadTable(sql, 'first.tsv', bytes(STRATIFIED_TSV)),
+      loadTable(sql, 'second.csv', bytes('x\n7\n')),
+    ])
+    expect(a.rowCount).toBe(3)
+    expect(b.rowCount).toBe(1)
+    expect(await previewRows(sql)).toEqual([{ x: 7n }])
   })
 
   it('keeps the previous table when a file is rejected', async () => {
     await loadTable(sql, 'good.csv', bytes('a\n1\n2\n'))
     await expect(loadTable(sql, 'header.tsv', bytes('a\tb\n'))).rejects.toThrow(LoadError)
-    await expect(loadTable(sql, 'broken.tsv.gz', bytes('nope'))).rejects.toThrow(LoadError)
+    await expect(loadTable(sql, 'data.xlsx', bytes('nope'))).rejects.toThrow(LoadError)
     expect(await previewRows(sql)).toEqual([{ a: 1n }, { a: 2n }])
   })
 })

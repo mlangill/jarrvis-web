@@ -20,7 +20,7 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which checks, builds and 
 
 - `src/lib/sql.ts`: the `Sql` interface (`query`, `registerFile`, `dropFile`) that all data-layer code takes as a parameter. Write data logic against it, never against DuckDB-WASM directly, so it stays testable in Node.
 - `src/test/nodeSql.ts`: the `Sql` implementation for tests. It uses DuckDB-WASM's synchronous Node build (`duckdb-node-blocking.cjs`), so tests run the same engine and SQL as the browser. The async Node worker build doesn't load, so don't switch to it. Tests register files as byte buffers only.
-- `src/lib/load.ts`: `loadTable` reads a file into `input_table`. It loads into a staging table first and only swaps it in once it passes checks, so a rejected file leaves the previous table intact. Problems the user should see are thrown as `LoadError`. The file is registered under a generated name (keeping the extension, so DuckDB detects `.gz`), and that name is replaced with the user's file name in error messages.
+- `src/lib/load.ts`: `loadTable` reads a file into `input_table`. Calls are queued so they run one at a time. `.txt` files are read as tab-separated first, and DuckDB guesses the delimiter only if that yields one column (its guess picks `;` on taxonomy strings). A `.gz` file that is not actually gzipped is read as plain text. It loads into a staging table first and only swaps it in once it passes checks, so a rejected file leaves the previous table intact. Problems the user should see are thrown as `LoadError`. The file is registered under a generated name (keeping the extension, so DuckDB detects `.gz`), and that name is replaced with the user's file name in error messages.
 - `src/lib/db.ts`: the one shared DuckDB instance (`getDb()`) and the browser `Sql` (`getSql()`). Browser `File`s are registered with `BROWSER_FILEREADER`, so large files are read lazily instead of copied into memory. The wasm and worker bundles are imported with `?url`, so Vite serves them from this site rather than a CDN. Don't switch to the jsDelivr bundles.
 - `vite.config.ts`: `base: './'` keeps asset paths relative, so the build works under the Pages subpath `/jarrvis-web/`. `@duckdb/duckdb-wasm` is excluded from `optimizeDeps`.
 
@@ -39,7 +39,9 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which checks, builds and 
 
 ## Test data
 
-Small sample files go in `test-data/`. Large lab files there are gitignored and may not be present. Reference datasets for validating version 1: the Bedford Basin PICRUSt2 data and the IBD HUMAnN2 data from the preprint.
+`test-data/README.md` lists each file, where it came from and its format. `scripts/fetch-test-data.sh` downloads them all again. `test-data/large/` is gitignored: it holds the full 229k-row TSD file from the original JarrVis repo and is absent on a fresh clone or in CI, so tests must not depend on it. `src/lib/load.testdata.test.ts` loads the committed files. The Bedford Basin PICRUSt2 and IBD HUMAnN2 datasets from the preprint aren't here yet.
+
+In dev, Vite serves `.gz` files with `Content-Encoding: gzip`, so `fetch('/test-data/x.gz')` returns already-decompressed bytes. To test real gzip handling in the browser, use the file picker, not fetch.
 
 ## Workflow
 

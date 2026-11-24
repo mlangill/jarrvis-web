@@ -24,12 +24,20 @@ export class LoadError extends Error {
 }
 
 let uploadCounter = 0
+let queue: Promise<unknown> = Promise.resolve()
 
 /**
  * Read a TSV, CSV or plain-text table (optionally gzipped) into INPUT_TABLE,
  * replacing whatever was loaded before. The first line must be a header.
+ * Calls run one at a time, since they share the staging and input tables.
  */
-export async function loadTable(sql: Sql, fileName: string, data: Uint8Array | File): Promise<LoadedTable> {
+export function loadTable(sql: Sql, fileName: string, data: Uint8Array | File): Promise<LoadedTable> {
+  const run = queue.then(() => loadTableNow(sql, fileName, data))
+  queue = run.catch(() => undefined)
+  return run
+}
+
+async function loadTableNow(sql: Sql, fileName: string, data: Uint8Array | File): Promise<LoadedTable> {
   const match = SUPPORTED.exec(fileName)
   if (!match) {
     throw new LoadError(
@@ -44,16 +52,34 @@ export async function loadTable(sql: Sql, fileName: string, data: Uint8Array | F
   // Register under a generated name so odd characters in the user's file name can't break the SQL,
   // keeping the extension so DuckDB detects gzip compression.
   const internalName = `upload_${++uploadCounter}.${ext}${gz}`
-  const delim = ext === 'csv' ? ", delim = ','" : ext === 'tsv' || ext === 'tab' ? ", delim = '\\t'" : ''
+  // .txt is usually tab-separated, and DuckDB's guess goes wrong when values contain ';' or ','
+  // (e.g. taxonomy strings), so try tab first and only auto-detect if that finds a single column.
+  const delims = ext === 'csv' ? [","] : ext === 'txt' ? ['\t', null] : ['\t']
 
   // Load into a staging table and only swap it in once it passes checks,
   // so a rejected file leaves the previous table untouched.
+  const readWith = async (compression: string) => {
+    for (const [i, delim] of delims.entries()) {
+      const delimArg = delim === null ? '' : `, delim = ${sqlString(delim)}`
+      await sql.query(
+        `CREATE OR REPLACE TABLE ${sqlIdent(STAGING_TABLE)} AS
+         SELECT * FROM read_csv(${sqlString(internalName)}, header = true, compression = '${compression}'${delimArg})`,
+      )
+      if (i === delims.length - 1) return
+      const cols = await sql.query(`DESCRIBE ${sqlIdent(STAGING_TABLE)}`)
+      if (cols.length > 1) return
+    }
+  }
+
   await sql.registerFile(internalName, data)
   try {
-    await sql.query(
-      `CREATE OR REPLACE TABLE ${sqlIdent(STAGING_TABLE)} AS
-       SELECT * FROM read_csv(${sqlString(internalName)}, header = true${delim})`,
-    )
+    try {
+      await readWith(gz ? 'gzip' : 'none')
+    } catch (err) {
+      // Browsers sometimes decompress a download but keep the .gz name; read those as plain text.
+      if (!(gz && /not a GZIP stream/i.test(firstLine(err)))) throw err
+      await readWith('none')
+    }
   } catch (err) {
     throw new LoadError(`Couldn't read "${fileName}": ${firstLine(err).replaceAll(internalName, fileName)}`)
   } finally {
