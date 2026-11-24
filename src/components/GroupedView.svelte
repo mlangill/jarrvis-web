@@ -2,13 +2,8 @@
   import { getSql } from '../lib/db'
   import { groupTable, LEVEL_LABELS, type GroupedResult, type Level } from '../lib/aggregate'
   import { view } from '../lib/view.svelte'
-  import type { GroupColumn } from '../lib/validate'
 
-  let {
-    groupColumns,
-    levels,
-    dataVersion,
-  }: { groupColumns: GroupColumn[]; levels: Level[]; dataVersion: number } = $props()
+  let { levels, dataVersion }: { levels: Level[]; dataVersion: number } = $props()
 
   const LIMIT = 200
   const fmt = new Intl.NumberFormat(undefined, { maximumSignificantDigits: 4 })
@@ -19,7 +14,7 @@
   let request = 0
 
   $effect(() => {
-    const opts = { groupBy: view.groupBy, level: view.level, stat: view.stat }
+    const opts = { groupBy: view.groupBy, level: view.level, stat: view.stat, fn: view.fn }
     void dataVersion
     if (!opts.groupBy) return
     const mine = ++request
@@ -44,32 +39,13 @@
 </script>
 
 <section class="grouped" aria-busy={busy}>
-  <h2>Grouped contributions</h2>
-
-  <div class="controls">
-    <label>
-      Group samples by
-      <select bind:value={view.groupBy}>
-        {#each groupColumns as g}
-          <option value={g.name}>{g.name} ({g.levels} {g.levels === 1 ? 'group' : 'groups'})</option>
-        {/each}
-      </select>
-    </label>
-    <label>
-      Taxonomic level
-      <select bind:value={view.level}>
-        {#each levels as level}
-          <option value={level}>{LEVEL_LABELS[level]}</option>
-        {/each}
-      </select>
-    </label>
-    <label>
-      Value
-      <select bind:value={view.stat}>
-        <option value="mean">Mean per sample in group</option>
-        <option value="sum">Total across group</option>
-      </select>
-    </label>
+  <div class="head">
+    <h2>
+      {#if view.fn}Taxa contributing to <span class="fn">{view.fn}</span>{:else}Contributions by group, taxon and function{/if}
+    </h2>
+    {#if view.fn}
+      <button type="button" onclick={() => (view.fn = null)}>Show all functions</button>
+    {/if}
   </div>
 
   {#if error}
@@ -91,7 +67,7 @@
       <p class="note">No rank prefixes (like p__ or g__) were found in the taxa, so they can't be collapsed.</p>
     {/if}
     <p class="note">
-      {result.totalRows.toLocaleString()} group × taxon × function rows{#if result.totalRows > result.rows.length}; showing the {result.rows.length} largest{/if}.
+      {result.totalRows.toLocaleString()} {view.fn ? 'group × taxon' : 'group × taxon × function'} rows{#if result.totalRows > result.rows.length}; showing the {result.rows.length} largest{/if}.
     </p>
 
     <div class="scroll">
@@ -126,31 +102,31 @@
     border: 1px solid var(--border);
     border-radius: 8px;
   }
-  h2 {
-    margin: 0 0 0.75rem;
-    font-size: 1.1rem;
-  }
-  .controls {
+  .head {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem 1.25rem;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
   }
-  label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    font-size: 0.85rem;
-    color: var(--muted);
+  h2 {
+    margin: 0;
+    font-size: 1.1rem;
   }
-  select {
+  .fn {
+    font-family: var(--mono);
+    font-size: 1rem;
+  }
+  button {
     font: inherit;
-    font-size: 0.95rem;
-    color: var(--text);
-    background: var(--bg);
+    font-size: 0.85rem;
+    color: var(--accent);
+    background: none;
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 0.3rem 0.5rem;
-    max-width: 100%;
+    padding: 0.25rem 0.6rem;
+    cursor: pointer;
   }
   .groups {
     display: flex;

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createNodeSql } from '../test/nodeSql'
-import { buildTaxonomy, groupTable, TAXONOMY } from './aggregate'
+import { buildTaxonomy, functionHeatmap, groupTable, TAXONOMY } from './aggregate'
 import { loadTable } from './load'
 import type { Sql } from './sql'
 import { META_RAW, STRAT_RAW, validateMetadata, validateStratified } from './validate'
@@ -127,5 +127,51 @@ describe('groupTable', () => {
     }
     const r = await groupTable(sql, { groupBy: 'type', level: 'phylum', stat: 'mean' })
     expect(r.groups).toEqual([{ name: 'A', samples: 5 }, { name: 'B', samples: 5 }])
+  })
+})
+
+describe('functionHeatmap', () => {
+  const META = tsv(['sample_id', 'type'], ['S1', 'A'], ['S2', 'A'], ['S3', 'B'])
+  const HEADER = ['sample', 'taxon', 'function', 'contribution']
+
+  it('sums over taxa, averages per group and ranks functions', async () => {
+    await setup(
+      tsv(HEADER,
+        ['S1', 'g__X', 'EC:1', '4'], ['S1', 'g__Y', 'EC:1', '2'], ['S3', 'g__X', 'EC:1', '1'],
+        ['S2', 'g__X', 'EC:2', '10'],
+        ['S3', 'g__X', 'K:9', '0.5'],
+      ),
+      META,
+    )
+    const r = await functionHeatmap(sql, { groupBy: 'type', stat: 'mean', top: 10 })
+    expect(r.groups.map((g) => g.name)).toEqual(['A', 'B'])
+    // EC:1: A = (4+2)/2 = 3, B = 1 → score 4. EC:2: A = 10/2 = 5 → score 5. K:9: B = 0.5.
+    expect(r.functions).toEqual(['EC:2', 'EC:1', 'K:9'])
+    expect(r.values).toEqual([[5, 0], [3, 1], [0, 0.5]])
+    expect(r.matchingFunctions).toBe(3)
+  })
+
+  it('filters by a case-insensitive search and cuts to the top N', async () => {
+    await setup(tsv(HEADER, ['S1', 'g__X', 'EC:1.1', '1'], ['S1', 'g__X', 'EC:1.2', '2'], ['S1', 'g__X', 'K00001', '9']), META)
+    const r = await functionHeatmap(sql, { groupBy: 'type', stat: 'sum', search: ' ec:1 ', top: 1 })
+    expect(r.functions).toEqual(['EC:1.2'])
+    expect(r.matchingFunctions).toBe(2)
+  })
+
+  it('returns no functions when nothing matches', async () => {
+    await setup(tsv(HEADER, ['S1', 'g__X', 'EC:1', '1']), META)
+    const r = await functionHeatmap(sql, { groupBy: 'type', stat: 'mean', search: 'zzz', top: 10 })
+    expect(r).toMatchObject({ functions: [], values: [], matchingFunctions: 0 })
+  })
+
+  it('agrees with groupTable totals on the TSD subset', async () => {
+    await setup(testFile('jarrvis/TSD-EC-stratified-subset.tsv'), testFile('jarrvis/TSD-sample-metadata.txt'))
+    const h = await functionHeatmap(sql, { groupBy: 'type', stat: 'mean', top: 50 })
+    expect(h.functions).toHaveLength(5)
+    const g = await groupTable(sql, { groupBy: 'type', level: 'genus', stat: 'mean', fn: h.functions[0], limit: 100000 })
+    expect(new Set(g.rows.map((r) => r.function))).toEqual(new Set([h.functions[0]]))
+    const byGroup = (name: string) => g.rows.filter((r) => r.group === name).reduce((a, r) => a + r.value, 0)
+    expect(byGroup('A')).toBeCloseTo(h.values[0][0], 6)
+    expect(byGroup('B')).toBeCloseTo(h.values[0][1], 6)
   })
 })

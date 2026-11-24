@@ -95,7 +95,35 @@ export interface GroupOptions {
   groupBy: string
   level: Level
   stat: Stat
+  /** Only this function, if set. */
+  fn?: string | null
   limit?: number
+}
+
+/**
+ * CTEs shared by every group-level query: `gs` maps each sample that has data and a value in
+ * `groupBy` to its group, and `n` counts those samples per group.
+ */
+function groupCtes(groupBy: string): string {
+  const g = id(groupBy)
+  return `
+      gs AS (
+        SELECT sample_id, ${g} AS grp FROM ${id(META)}
+        WHERE ${g} IS NOT NULL AND sample_id IN (SELECT DISTINCT sample FROM ${id(STRAT)})
+      ),
+      n AS (SELECT grp, count(*) AS samples FROM gs GROUP BY grp)`
+}
+
+/** Groups in display order, and how many samples with data have no group value. */
+async function groupInfo(sql: Sql, groupBy: string): Promise<{ groups: GroupInfo[]; ungroupedSamples: number }> {
+  const g = id(groupBy)
+  const groups = await sql.query<{ name: string; samples: bigint }>(
+    `WITH ${groupCtes(groupBy)} SELECT grp AS name, samples FROM n ORDER BY grp`,
+  )
+  const [{ ungrouped }] = await sql.query(`
+    SELECT count(*) AS ungrouped FROM ${id(META)}
+    WHERE ${g} IS NULL AND sample_id IN (SELECT DISTINCT sample FROM ${id(STRAT)})`)
+  return { groups: groups.map((r) => ({ name: r.name, samples: Number(r.samples) })), ungroupedSamples: Number(ungrouped) }
 }
 
 /**
@@ -103,43 +131,82 @@ export interface GroupOptions {
  * Mean is the group total divided by the number of samples in the group that have data, so a
  * sample with no row for a taxon/function counts as zero.
  */
-export async function groupTable(sql: Sql, { groupBy, level, stat, limit = 200 }: GroupOptions): Promise<GroupedResult> {
+export async function groupTable(sql: Sql, { groupBy, level, stat, fn = null, limit = 200 }: GroupOptions): Promise<GroupedResult> {
   const tx = taxonExprs(level)
-  const g = id(groupBy)
   const value = stat === 'mean' ? 'a.total / n.samples' : 'a.total'
   await sql.query(`
     CREATE OR REPLACE TABLE ${id(GROUPED)} AS
     WITH
       tx AS (SELECT taxon, ${tx.key} AS tkey, ${tx.label} AS tlabel, ${tx.path} AS tpath FROM ${id(TAXONOMY)}),
-      gs AS (
-        SELECT sample_id, ${g} AS grp FROM ${id(META)}
-        WHERE ${g} IS NOT NULL AND sample_id IN (SELECT DISTINCT sample FROM ${id(STRAT)})
-      ),
-      n AS (SELECT grp, count(*) AS samples FROM gs GROUP BY grp),
+      ${groupCtes(groupBy)},
       a AS (
         SELECT gs.grp, tx.tkey, any_value(tx.tlabel) AS tlabel, any_value(tx.tpath) AS tpath, s.function, sum(s.contribution) AS total
         FROM ${id(STRAT)} s JOIN gs ON s.sample = gs.sample_id JOIN tx USING (taxon)
+        ${fn === null ? '' : `WHERE s.function = ${sqlString(fn)}`}
         GROUP BY gs.grp, tx.tkey, s.function
       )
     SELECT a.grp AS "group", a.tlabel AS taxon, a.tpath AS path, a.function, ${value} AS value, n.samples
     FROM a JOIN n USING (grp)`)
 
-  const groups = await sql.query<{ name: string; samples: bigint }>(`
-    SELECT ${g} AS name, count(*) AS samples FROM ${id(META)}
-    WHERE ${g} IS NOT NULL AND sample_id IN (SELECT DISTINCT sample FROM ${id(STRAT)})
-    GROUP BY ${g} ORDER BY ${g}`)
-  const [{ ungrouped }] = await sql.query(`
-    SELECT count(*) AS ungrouped FROM ${id(META)}
-    WHERE ${g} IS NULL AND sample_id IN (SELECT DISTINCT sample FROM ${id(STRAT)})`)
+  const info = await groupInfo(sql, groupBy)
   const [{ n }] = await sql.query(`SELECT count(*) AS n FROM ${id(GROUPED)}`)
   const rows = await sql.query<GroupedRow>(`
     SELECT "group", taxon, path, function, value FROM ${id(GROUPED)}
     ORDER BY value DESC, "group", taxon, function LIMIT ${Math.max(0, Math.floor(limit))}`)
 
-  return {
-    groups: groups.map((r) => ({ name: r.name, samples: Number(r.samples) })),
-    ungroupedSamples: Number(ungrouped),
-    totalRows: Number(n),
-    rows,
-  }
+  return { ...info, totalRows: Number(n), rows }
+}
+
+export interface HeatmapOptions {
+  groupBy: string
+  stat: Stat
+  /** Case-insensitive substring a function must contain; empty for all. */
+  search?: string
+  /** How many functions to keep, largest total first. */
+  top: number
+}
+
+export interface HeatmapResult {
+  groups: GroupInfo[]
+  ungroupedSamples: number
+  /** Functions shown, largest first. */
+  functions: string[]
+  /** Functions matching the search before the top-N cut. */
+  matchingFunctions: number
+  /** values[f][g]: value for functions[f] in groups[g]; 0 where the function is absent. */
+  values: number[][]
+}
+
+/**
+ * Function × group values, summed over all taxa. Functions are ranked by the sum of their
+ * group values (so with 'mean', groups weigh equally whatever their size) and cut to `top`.
+ */
+export async function functionHeatmap(sql: Sql, { groupBy, stat, search = '', top }: HeatmapOptions): Promise<HeatmapResult> {
+  const value = stat === 'mean' ? 'f.total / n.samples' : 'f.total'
+  const term = search.trim()
+  const where = term ? `WHERE contains(lower(s.function), ${sqlString(term.toLowerCase())})` : ''
+  const cells = await sql.query<{ grp: string; function: string; value: number; matching: bigint }>(`
+    WITH
+      ${groupCtes(groupBy)},
+      f AS (
+        SELECT gs.grp, s.function, sum(s.contribution) AS total
+        FROM ${id(STRAT)} s JOIN gs ON s.sample = gs.sample_id ${where}
+        GROUP BY gs.grp, s.function
+      ),
+      v AS (SELECT f.grp, f.function, ${value} AS value FROM f JOIN n USING (grp)),
+      ranked AS (
+        SELECT function, sum(value) AS score, count(*) OVER () AS matching FROM v
+        GROUP BY function ORDER BY score DESC, function LIMIT ${Math.max(1, Math.floor(top))}
+      )
+    SELECT v.grp, v.function, v.value, ranked.matching
+    FROM v JOIN ranked USING (function) ORDER BY ranked.score DESC, v.function`)
+
+  const info = await groupInfo(sql, groupBy)
+  const functions = [...new Set(cells.map((c) => c.function))]
+  const fIndex = new Map(functions.map((f, i) => [f, i]))
+  const gIndex = new Map(info.groups.map((g, i) => [g.name, i]))
+  const values = functions.map(() => info.groups.map(() => 0))
+  for (const c of cells) values[fIndex.get(c.function)!][gIndex.get(c.grp)!] = Number(c.value)
+
+  return { ...info, functions, matchingFunctions: Number(cells[0]?.matching ?? 0), values }
 }

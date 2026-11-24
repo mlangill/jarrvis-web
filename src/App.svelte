@@ -1,5 +1,7 @@
 <script lang="ts">
   import GroupedView from './components/GroupedView.svelte'
+  import Heatmap from './components/Heatmap.svelte'
+  import ViewControls from './components/ViewControls.svelte'
   import InputPanel, { type PanelState } from './components/InputPanel.svelte'
   import { buildTaxonomy, type Level } from './lib/aggregate'
   import { view } from './lib/view.svelte'
@@ -84,6 +86,7 @@
     strat.summary = stratSummary
       ? `${plural(stratSummary.rows, 'row')} · ${plural(stratSummary.samples, 'sample')} · ${plural(stratSummary.taxa, 'taxon', 'taxa')} · ${plural(stratSummary.functions, 'function')}`
       : null
+    view.fn = null
     if (stratSummary) {
       levels = [...(await buildTaxonomy(await getSql())), 'taxon']
       if (!levels.includes(view.level)) view.level = levels.includes('genus') ? 'genus' : levels[0]
@@ -144,7 +147,9 @@
   {/if}
 
   {#if ready && metaSummary}
-    <GroupedView groupColumns={metaSummary.groupColumns} {levels} {dataVersion} />
+    <ViewControls groupColumns={metaSummary.groupColumns} {levels} />
+    <Heatmap {dataVersion} />
+    <GroupedView {levels} {dataVersion} />
   {/if}
 
   <p class="status">
