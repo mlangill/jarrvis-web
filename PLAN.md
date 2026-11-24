@@ -92,7 +92,7 @@ Live at https://morganlangille.com/jarrvis-web/. The first prompts and most of v
 
 ### Done
 
-- Inputs: 4-column JarrVis format, PICRUSt2 contrib, legacy contrib and wide stratified, HUMAnN 2/3 stratified, auto-detected with a Format menu to override. Metadata file with any number of group columns. Optional taxonomy file (QIIME 2 `taxonomy.tsv`, DADA2 rank columns or a plain lineage) mapping sequence IDs to lineages. Validation messages and sample ID cross-checks for all of them.
+- Inputs: 4-column JarrVis format, PICRUSt2 contrib, legacy contrib and wide stratified, HUMAnN 2/3 stratified, auto-detected with a Format menu to override. Metadata file with any number of group columns. Optional taxonomy file (QIIME 2 `taxonomy.tsv`, DADA2 rank columns or a plain lineage) mapping sequence IDs to lineages. Validation messages and sample ID cross-checks for all of them. Tested by hand on real PICRUSt2 output with its QIIME 2 taxonomy (`test-data/picrust2/chemerin/`), which collapses correctly.
 - Shared settings: group-by column, taxonomic level (phylum to species, by rank prefix), mean or total, function search, ranking by highest total or largest difference between groups.
 - Views, in page order: Sankey (click-to-highlight, draggable nodes, 4 to 30 taxa, choice of function count), stacked bar for the selected function (per group or per sample, absolute or relative), heatmap with a difference column, grouped table (optional higher-rank columns).
 - Export: SVG and PNG of each chart, TSV of the full summary behind each view.
@@ -107,7 +107,7 @@ Live at https://morganlangille.com/jarrvis-web/. The first prompts and most of v
 - Searching and picking individual taxa; picking individual functions for the Sankey beyond search and top N
 - Locking a highlight and side-by-side comparison of two groups
 - Microbiome Helper input
-- Testing on the Bedford Basin PICRUSt2 and IBD HUMAnN2 data from the preprint, and on real PICRUSt2 output with a taxonomy file (`test-data/picrust2/chemerin/` is committed for this)
+- Testing on the Bedford Basin PICRUSt2 and IBD HUMAnN2 data from the preprint
 
 ### Next: saved views and shareable links (design agreed in outline, decisions open)
 
