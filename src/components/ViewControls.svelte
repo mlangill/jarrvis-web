@@ -4,6 +4,13 @@
   import { view } from '../lib/view.svelte'
 
   let { groupColumns, levels }: { groupColumns: GroupColumn[]; levels: Level[] } = $props()
+
+  let searchInput = $state(view.search)
+  let searchTimer: ReturnType<typeof setTimeout>
+  function onSearch() {
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => (view.search = searchInput), 250)
+  }
 </script>
 
 <!-- Settings shared by every view. -->
@@ -31,6 +38,10 @@
         <option value="sum">Total across group</option>
       </select>
     </label>
+    <label>
+      Search functions
+      <input type="search" bind:value={searchInput} oninput={onSearch} placeholder="e.g. EC:2.1 or K00" />
+    </label>
   </div>
 
 
@@ -55,6 +66,7 @@
     font-size: 0.85rem;
     color: var(--muted);
   }
+  input,
   select {
     font: inherit;
     font-size: 0.95rem;

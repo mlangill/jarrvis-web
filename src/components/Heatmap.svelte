@@ -21,8 +21,6 @@
   let el: HTMLDivElement
   let chart: echarts.ECharts | null = null
   let request = 0
-  let searchInput = $state(view.search)
-  let searchTimer: ReturnType<typeof setTimeout>
 
   // Query whenever the inputs change.
   $effect(() => {
@@ -43,11 +41,6 @@
       }
     })()
   })
-
-  function onSearch() {
-    clearTimeout(searchTimer)
-    searchTimer = setTimeout(() => (view.search = searchInput), 250)
-  }
 
   /** The value used for color under each scale, plus the color-bar range and label. */
   function colorValues(r: HeatmapResult, scale: HeatScale) {
@@ -175,6 +168,7 @@
       if (fn) {
         view.highlight = null
         view.fn = view.fn === fn ? null : fn
+        if (view.fn) showTaxa()
       }
     })
     const ro = new ResizeObserver(() => chart?.resize())
@@ -186,6 +180,23 @@
       chart = null
     }
   })
+
+  /** The heatmap is last on the page, so scroll up to the stacked bar that shows the selected function's taxa. */
+  function showTaxa() {
+    const target = () => {
+      const bars = document.querySelector('section.bars')
+      const toolbar = document.querySelector('[aria-label="View settings"]')?.getBoundingClientRect().height ?? 0
+      return bars ? bars.getBoundingClientRect().top + scrollY - toolbar - 16 : null
+    }
+    const first = target()
+    if (first === null) return
+    scrollTo({ top: first, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    // The Sankey above may grow once it adds the selected function, so re-aim after it updates.
+    setTimeout(() => {
+      const again = target()
+      if (again !== null && Math.abs(again - first) > 4) scrollTo({ top: again, behavior: 'smooth' })
+    }, 600)
+  }
 
   // Redraw when the data, scale, selection or color scheme changes.
   $effect(() => {
@@ -215,13 +226,9 @@
     <h2>Functions by group</h2>
     <ExportButtons {onexport} disabled={!result || result.functions.length === 0} />
   </div>
-  <p class="desc">Click a function to see which taxa contribute to it.</p>
+  <p class="desc">Each function's total across all taxa, per group. Click a function to see which taxa contribute to it.</p>
 
   <div class="controls">
-    <label>
-      Search functions
-      <input type="search" bind:value={searchInput} oninput={onSearch} placeholder="e.g. EC:2.1 or K00" />
-    </label>
     <label>
       Show
       <select bind:value={view.top}>
@@ -298,7 +305,6 @@
     font-size: 0.85rem;
     color: var(--muted);
   }
-  input,
   select {
     font: inherit;
     font-size: 0.95rem;

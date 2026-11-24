@@ -247,7 +247,7 @@
     <ExportButtons {onexport} disabled={!result || result.nodes.length === 0} />
   </div>
   <p class="desc">
-    Click a group, taxon or function to highlight its paths. Drag nodes to rearrange. Functions follow the heatmap's search.
+    Click a group, taxon or function to highlight its paths. Drag nodes to rearrange. Functions follow the function search above.
   </p>
 
   <div class="controls">
