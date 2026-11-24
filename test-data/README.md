@@ -13,4 +13,6 @@ Run `scripts/fetch-test-data.sh` to download everything here. Files in `large/` 
 | `picrust2/path_abun_strat.tsv.gz` | PICRUSt2 test suite | Wide stratified pathway abundance |
 | `humann2/humann2_strat_example.tsv.gz` | PICRUSt2 test suite | HUMAnN2 stratified gene families (`function\|taxon` rows) |
 
+`public/demo/` holds the example data the app's demo button loads: `TSD-stratified.tsv.gz` (the full TSD table above, gzipped, 2 MB) and `TSD-metadata.tsv` (a copy of the TSD metadata). The fetch script rebuilds them.
+
 The PICRUSt2 and HUMAnN2 files are tiny synthetic tables from unit tests. They're for checking formats, not realistic sizes. The Bedford Basin and IBD datasets named in `PLAN.md` aren't public here yet.

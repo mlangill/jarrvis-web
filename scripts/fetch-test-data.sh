@@ -24,3 +24,11 @@ fetch "$PICRUST2/convert_table/metagenome_contrib_legacy.tsv.gz" test-data/picru
 fetch "$PICRUST2/metagenome_pipeline/metagenome_out/pred_metagenome_strat.tsv.gz" test-data/picrust2/pred_metagenome_strat.tsv.gz
 fetch "$PICRUST2/pathway_pipeline/exp_path_abun_strat.tsv.gz" test-data/picrust2/path_abun_strat.tsv.gz
 fetch "$PICRUST2/convert_table/humann2_strat_example.tsv.gz" test-data/humann2/humann2_strat_example.tsv.gz
+
+# The demo the app's "Try the example data" button loads, served from public/demo/.
+mkdir -p public/demo
+if [ ! -s public/demo/TSD-stratified.tsv.gz ]; then
+  gzip -9 -n -c test-data/large/TSD-refseq-kraken2-EC-rpkm-stratified-SankeyFormat.txt > public/demo/TSD-stratified.tsv.gz
+  echo "made  public/demo/TSD-stratified.tsv.gz"
+fi
+cp test-data/jarrvis/TSD-sample-metadata.txt public/demo/TSD-metadata.tsv

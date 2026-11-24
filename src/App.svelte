@@ -109,6 +109,26 @@
     await updateCross()
   }
 
+  let demoError = $state<string | null>(null)
+  const busy = $derived(strat.loading !== null || meta.loading !== null)
+
+  /** Fetch the example files shipped with the site and load them as if the user had picked them. */
+  async function loadDemo() {
+    demoError = null
+    try {
+      const fetchFile = async (name: string) => {
+        const res = await fetch(`${import.meta.env.BASE_URL}demo/${name}`)
+        if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`)
+        return new File([await res.blob()], name)
+      }
+      const [table, metadata] = await Promise.all([fetchFile('TSD-stratified.tsv.gz'), fetchFile('TSD-metadata.tsv')])
+      await onStrat(table)
+      await onMeta(metadata)
+    } catch (err) {
+      demoError = `Couldn't load the example data: ${err instanceof Error ? err.message : err}`
+    }
+  }
+
   const ready = $derived(
     stratSummary && metaSummary && cross?.summary && metaSummary.groupColumns.length > 0 ? cross.summary : null,
   )
@@ -119,6 +139,15 @@
     <h1>JarrVis</h1>
     <p>Stratified microbiome function explorer. Runs entirely in your browser; your files never leave your computer.</p>
   </header>
+
+  <div class="demo">
+    <button onclick={loadDemo} disabled={busy}>Try the example data</button>
+    <span>
+      The TSD metagenomes from the original JarrVis: 10 samples in two groups, Kraken2 taxonomy, 995 EC functions (2 MB
+      download).
+    </span>
+    {#if demoError}<p class="error">{demoError}</p>{/if}
+  </div>
 
   <div class="inputs">
     <InputPanel
@@ -177,6 +206,34 @@
   header p {
     margin-top: 0;
     color: var(--muted);
+  }
+  .demo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .demo button {
+    font: inherit;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-bg);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 0.35rem 0.8rem;
+    cursor: pointer;
+  }
+  .demo button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .demo .error {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--error);
   }
   .inputs {
     display: grid;
