@@ -107,7 +107,7 @@ Live at https://morganlangille.com/jarrvis-web/. The first prompts and most of v
 - Searching and picking individual taxa; picking individual functions for the Sankey beyond search and top N
 - Locking a highlight and side-by-side comparison of two groups
 - Microbiome Helper input
-- Testing on the Bedford Basin PICRUSt2 and IBD HUMAnN2 data from the preprint, and on real PICRUSt2 output with a taxonomy file (`test-data/picrust2/chemerin/` is a local candidate, untracked)
+- Testing on the Bedford Basin PICRUSt2 and IBD HUMAnN2 data from the preprint, and on real PICRUSt2 output with a taxonomy file (`test-data/picrust2/chemerin/` is committed for this)
 
 ### Next: saved views and shareable links (design agreed in outline, decisions open)
 

@@ -64,7 +64,7 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which checks, builds and 
 
 ## Test data
 
-`test-data/README.md` lists each file, where it came from and its format. `scripts/fetch-test-data.sh` downloads them all again. `test-data/large/` is gitignored: it holds the full 229k-row TSD file from the original JarrVis repo and is absent on a fresh clone or in CI, so tests must not depend on it. `src/lib/load.testdata.test.ts` loads the committed files. The Bedford Basin PICRUSt2 and IBD HUMAnN2 datasets from the preprint aren't here yet. `test-data/picrust2/chemerin/` (a local PICRUSt2 run with QIIME 2 taxonomy and metadata) is untracked: it may be unpublished lab data, so don't commit it without asking.
+`test-data/README.md` lists each file, where it came from and its format. `scripts/fetch-test-data.sh` downloads them all again. `test-data/large/` is gitignored: it holds the full 229k-row TSD file from the original JarrVis repo and is absent on a fresh clone or in CI, so tests must not depend on it. `src/lib/load.testdata.test.ts` loads the committed files. The Bedford Basin PICRUSt2 and IBD HUMAnN2 datasets from the preprint aren't here yet. `test-data/picrust2/chemerin/` is a real PICRUSt2 run (KO, EC and pathway contributions) with its QIIME 2 `taxonomy.tsv` and metadata, for testing the taxonomy-file path on real output.
 
 In dev, Vite serves `.gz` files with `Content-Encoding: gzip`, so `fetch('/test-data/x.gz')` returns already-decompressed bytes. To test real gzip handling in the browser, use the file picker, not fetch.
 
