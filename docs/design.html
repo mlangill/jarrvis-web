@@ -1,0 +1,425 @@
+<meta charset="utf-8">
+<title>JarrVis Design</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: one reading column with a contents list up top; wide tables and the diagram scroll in their own boxes.
+     Colours and type follow the app's own tokens (src/app.css) so this page can become its About page unchanged. */
+  :root {
+    --bg: #ffffff;
+    --fg: #2b2a30;
+    --muted: #6b6875;
+    --line: #e5e4e7;
+    --panel: #f6f6f8;
+    --accent: #2f6fb3;
+    --accent-bg: rgba(47, 111, 179, 0.08);
+    --warn: #8a5a00;
+    --error: #a02525;
+    --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+    --mono: ui-monospace, 'SF Mono', Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16151a; --fg: #e6e4ea; --muted: #a19eab; --line: #2e2c34; --panel: #1e1d23;
+      --accent: #7cb2eb; --accent-bg: rgba(124, 178, 235, 0.1); --warn: #f0c36b; --error: #f2a3a3;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #16151a; --fg: #e6e4ea; --muted: #a19eab; --line: #2e2c34; --panel: #1e1d23;
+    --accent: #7cb2eb; --accent-bg: rgba(124, 178, 235, 0.1); --warn: #f0c36b; --error: #f2a3a3;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.6 var(--sans);
+  }
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding-block: 2.5rem 4rem;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  header { display: grid; gap: 0.5rem; margin-bottom: 2rem; }
+  .eyebrow { font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  h1 { font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+  .lede { font-size: 1.1rem; color: var(--muted); margin: 0; max-width: 62ch; }
+  h2 {
+    font-size: 1.35rem; line-height: 1.25; margin: 3rem 0 0.75rem; padding-top: 1rem;
+    border-top: 1px solid var(--line); text-wrap: balance;
+  }
+  h3 { font-size: 1.05rem; margin: 1.75rem 0 0.4rem; }
+  p, li { max-width: 68ch; }
+  p { margin: 0 0 0.9rem; }
+  ul, ol { padding-left: 1.25rem; margin: 0 0 1rem; }
+  li { margin-bottom: 0.35rem; }
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  code { font-family: var(--mono); font-size: 0.88em; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0.05em 0.3em; overflow-wrap: anywhere; }
+  strong { font-weight: 650; }
+
+  nav.toc { border: 1px solid var(--line); border-radius: 8px; padding: 0.9rem 1.1rem; }
+  nav.toc p { font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0 0 0.4rem; }
+  nav.toc ol { columns: 2 14rem; column-gap: 2rem; margin: 0; padding-left: 1.2rem; font-size: 0.95rem; }
+  nav.toc li { margin: 0 0 0.2rem; break-inside: avoid; }
+
+  .principles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 0.75rem; margin: 1rem 0; }
+  .principle { background: var(--panel); border-radius: 8px; padding: 0.9rem 1rem; min-width: 0; }
+  .principle h3 { margin: 0 0 0.3rem; font-size: 1rem; }
+  .principle p { margin: 0; font-size: 0.95rem; }
+
+  .scroll { overflow-x: auto; margin: 1rem 0 1.25rem; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+  th, td { text-align: left; vertical-align: top; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: 0; }
+  th { font-weight: 600; background: var(--panel); white-space: nowrap; }
+  td:first-child { white-space: nowrap; }
+  .sev { display: inline-block; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 0.05rem 0.45rem; border-radius: 999px; border: 1px solid currentColor; }
+  .sev.error { color: var(--error); }
+  .sev.warning { color: var(--warn); }
+  .sev.info { color: var(--accent); }
+
+  figure { margin: 1.25rem 0 1.5rem; }
+  figure .scroll { padding: 0.75rem; background: var(--bg); }
+  figcaption { font-size: 0.88rem; color: var(--muted); margin-top: 0.5rem; max-width: 68ch; }
+  svg.flow { display: block; min-width: 680px; width: 100%; height: auto; }
+  svg.flow .box { fill: var(--panel); stroke: var(--line); }
+  svg.flow .box.key { fill: var(--accent-bg); stroke: var(--accent); }
+  svg.flow .chip { fill: var(--bg); stroke: var(--line); }
+  svg.flow .t { fill: var(--fg); font: 600 13px var(--sans); }
+  svg.flow .s { fill: var(--muted); font: 11.5px var(--sans); }
+  svg.flow .c { fill: var(--fg); font: 12px var(--sans); }
+  svg.flow .edge { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+  svg.flow .head { fill: var(--muted); }
+
+  .formula {
+    font-family: var(--mono); font-size: 0.95rem; background: var(--panel); border-radius: 8px;
+    padding: 0.8rem 1rem; margin: 0.75rem 0 1rem; overflow-x: auto; white-space: pre;
+  }
+  .note { border-left: 3px solid var(--accent); padding: 0.1rem 0 0.1rem 0.9rem; color: var(--muted); margin: 1rem 0; }
+  .note p { margin: 0; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 0.88rem; color: var(--muted); }
+</style>
+
+<div class="page">
+  <header>
+    <p class="eyebrow">Design notes · JarrVis web rebuild</p>
+    <h1>How JarrVis works</h1>
+    <p class="lede">
+      JarrVis shows which taxa contribute to which functions in a microbiome, and how that differs between groups of
+      samples. This page explains how the web version is built, how every number on screen is calculated, and where it
+      is going next.
+    </p>
+  </header>
+
+  <nav class="toc" aria-label="Contents">
+    <p>Contents</p>
+    <ol>
+      <li><a href="#what">What it does</a></li>
+      <li><a href="#principles">Design principles</a></li>
+      <li><a href="#flow">How data flows</a></li>
+      <li><a href="#inputs">Inputs and checks</a></li>
+      <li><a href="#numbers">How the numbers are calculated</a></li>
+      <li><a href="#views">The four views</a></li>
+      <li><a href="#colour">Colour and accessibility</a></li>
+      <li><a href="#export">Export</a></li>
+      <li><a href="#code">Code map</a></li>
+      <li><a href="#testing">Testing and deployment</a></li>
+      <li><a href="#next">Limits and what's next</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="what">What it does</h2>
+  <p>
+    A stratified function table records, for every sample, how much each taxon contributes to each function: for
+    example how many RPKM of <code>EC:2.1.1.45</code> in sample <code>31D</code> come from <em>Streptococcus</em>.
+    JarrVis turns that table, plus a sample metadata file, into four linked views that answer three questions:
+  </p>
+  <ul>
+    <li>Which functions are most abundant, or differ most, between groups of samples?</li>
+    <li>Which taxa are responsible for a given function, and does that change between groups?</li>
+    <li>How does contribution flow from groups, through taxa, to functions?</li>
+  </ul>
+  <p>
+    It is a rebuild of <a href="https://github.com/dhwanidesai/JarrVis">JarrVis</a>
+    (<a href="https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1">preprint</a>). The original's
+    groups → taxa → functions Sankey is kept. The rebuild needs no R install or server, reads PICRUSt2 and HUMAnN
+    output directly, and copes with tables of hundreds of thousands of rows.
+  </p>
+
+  <h2 id="principles">Design principles</h2>
+  <div class="principles">
+    <div class="principle">
+      <h3>Your data stays on your computer</h3>
+      <p>The app is a static website. Files are read inside the browser and never uploaded; there is no server or account.</p>
+    </div>
+    <div class="principle">
+      <h3>One data engine</h3>
+      <p>DuckDB-WASM, a full SQL database compiled to run in the browser, holds the table once. All filtering, grouping and ranking is SQL.</p>
+    </div>
+    <div class="principle">
+      <h3>Charts get summaries, not raw rows</h3>
+      <p>Inputs can be hundreds of MB. Charts only ever receive a capped summary: the top functions and top taxa, with the rest folded into Other.</p>
+    </div>
+    <div class="principle">
+      <h3>Linked views over one shared state</h3>
+      <p>Settings and selections live in one small object. Each view is a query plus a chart on it, so selecting a function anywhere updates every view.</p>
+    </div>
+  </div>
+
+  <h2 id="flow">How data flows</h2>
+  <figure>
+    <div class="scroll">
+      <svg class="flow" viewBox="0 0 760 300" role="img" aria-labelledby="flow-title flow-desc">
+        <title id="flow-title">Data flow through JarrVis</title>
+        <desc id="flow-desc">Files are loaded into DuckDB as text, converted to the 4-column format if needed, validated into clean tables, summarized by SQL queries driven by the shared view state, and drawn by four views whose selections feed back into that state.</desc>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path class="head" d="M0,0 L10,5 L0,10 z" />
+          </marker>
+        </defs>
+
+        <!-- Row 1: left to right -->
+        <rect class="box" x="10" y="20" width="160" height="70" rx="8" />
+        <text class="t" x="24" y="44">Your files</text>
+        <text class="s" x="24" y="63">table · metadata</text>
+        <text class="s" x="24" y="78">taxonomy (optional)</text>
+
+        <rect class="box" x="200" y="20" width="160" height="70" rx="8" />
+        <text class="t" x="214" y="44">Load</text>
+        <text class="s" x="214" y="63">as text tables</text>
+        <text class="s" x="214" y="78">in DuckDB</text>
+
+        <rect class="box" x="390" y="20" width="160" height="70" rx="8" />
+        <text class="t" x="404" y="44">Detect and convert</text>
+        <text class="s" x="404" y="63">PICRUSt2, HUMAnN</text>
+        <text class="s" x="404" y="78">→ 4 columns</text>
+
+        <rect class="box key" x="580" y="20" width="170" height="70" rx="8" />
+        <text class="t" x="594" y="44">Validate</text>
+        <text class="s" x="594" y="63">errors · warnings</text>
+        <text class="s" x="594" y="78">notes</text>
+
+        <path class="edge" d="M170,55 H198" marker-end="url(#arrow)" />
+        <path class="edge" d="M360,55 H388" marker-end="url(#arrow)" />
+        <path class="edge" d="M550,55 H578" marker-end="url(#arrow)" />
+
+        <!-- Row 2: right to left -->
+        <rect class="box" x="580" y="130" width="170" height="70" rx="8" />
+        <text class="t" x="594" y="156">Clean tables</text>
+        <text class="s" x="594" y="175">strat · metadata</text>
+        <text class="s" x="594" y="190">taxonomy (ranks)</text>
+
+        <rect class="box" x="390" y="130" width="160" height="70" rx="8" />
+        <text class="t" x="404" y="156">SQL summaries</text>
+        <text class="s" x="404" y="175">group · collapse taxa</text>
+        <text class="s" x="404" y="190">rank · top N + Other</text>
+
+        <rect class="box" x="10" y="130" width="350" height="70" rx="8" />
+        <text class="t" x="24" y="152">Views</text>
+        <rect class="chip" x="24" y="164" width="70" height="24" rx="5" /><text class="c" x="36" y="180">Sankey</text>
+        <rect class="chip" x="102" y="164" width="88" height="24" rx="5" /><text class="c" x="113" y="180">Stacked bar</text>
+        <rect class="chip" x="198" y="164" width="72" height="24" rx="5" /><text class="c" x="209" y="180">Heatmap</text>
+        <rect class="chip" x="278" y="164" width="60" height="24" rx="5" /><text class="c" x="292" y="180">Table</text>
+
+        <path class="edge" d="M665,90 V128" marker-end="url(#arrow)" />
+        <path class="edge" d="M580,165 H552" marker-end="url(#arrow)" />
+        <path class="edge" d="M390,165 H362" marker-end="url(#arrow)" />
+
+        <!-- Row 3: shared state -->
+        <rect class="box key" x="150" y="240" width="420" height="50" rx="8" />
+        <text class="t" x="164" y="261">Shared view state</text>
+        <text class="s" x="164" y="279">group-by · taxonomic level · mean or total · selected function · ranking</text>
+
+        <path class="edge" d="M470,240 V202" marker-end="url(#arrow)" />
+        <text class="s" x="478" y="226">settings</text>
+        <path class="edge" d="M185,200 V238" marker-end="url(#arrow)" />
+        <text class="s" x="193" y="226">clicks and choices</text>
+      </svg>
+    </div>
+    <figcaption>Everything in this diagram runs in the browser tab. Only the summaries in the second row ever reach a chart.</figcaption>
+  </figure>
+
+  <ol>
+    <li><strong>Load.</strong> Each file is read by DuckDB into a table with every column as text, so sample IDs such as <code>007</code> keep their leading zeros. A file goes into a staging table first and only replaces the previous one if it loads, so a bad file never wipes good data. TSV, CSV and TXT are accepted, optionally gzipped.</li>
+    <li><strong>Detect and convert.</strong> The stratified table's format is recognized from its column names (or chosen by hand) and rewritten into four columns: sample, taxon, function, contribution.</li>
+    <li><strong>Validate.</strong> Checks produce messages at three levels. Only errors block the data. The original upload is kept, so choosing a different format re-reads it without reloading.</li>
+    <li><strong>Clean tables.</strong> Valid data becomes typed tables. Each taxon string is split into ranks, using the optional taxonomy file when the taxa are IDs.</li>
+    <li><strong>Summarize and draw.</strong> Each view asks DuckDB for exactly the summary it needs, given the current settings, and redraws when they change.</li>
+  </ol>
+
+  <h2 id="inputs">Inputs and checks</h2>
+  <h3>1. Stratified table</h3>
+  <p>The Format menu defaults to Auto-detect. Every format ends up as the same four columns before any check runs.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Format</th><th>Recognized by</th><th>How it is read</th></tr></thead>
+      <tbody>
+        <tr><td>4-column</td><td>Anything else</td><td>Sample, taxon, function, contribution, by position. A header line is required.</td></tr>
+        <tr><td>PICRUSt2 contributions</td><td><code>taxon_function_abun</code></td><td>Contribution is <code>taxon_function_abun</code>; taxa are sequence IDs.</td></tr>
+        <tr><td>PICRUSt2 legacy contributions</td><td><code>CountContributedByOTU</code></td><td>Contribution is <code>CountContributedByOTU</code>; taxa are OTU IDs.</td></tr>
+        <tr><td>PICRUSt2 wide stratified</td><td>2nd column <code>sequence</code></td><td>One column per sample becomes one row per sample; zeros are dropped.</td></tr>
+        <tr><td>HUMAnN 2 or 3 stratified</td><td>1st column starts with <code>#</code></td><td>Only <code>function|taxon</code> rows are kept; community totals, UNMAPPED, UNINTEGRATED, UNGROUPED and zeros are dropped. Suffixes like <code>_Abundance-RPKs</code> are removed from sample names.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>2. Sample metadata</h3>
+  <p>Sample IDs in the first column, whatever it is called, then at least one column to group samples by. Every non-empty column is offered as a grouping.</p>
+
+  <h3>3. Taxonomy (optional)</h3>
+  <p>
+    Needed only when the table's taxa are IDs, as PICRUSt2's are. The first column holds the IDs. The lineage can be
+    one column (a QIIME 2 <code>taxonomy.tsv</code> works as is) or one column per rank, as DADA2 writes. Lineages
+    without rank prefixes are read by position, kingdom first. Table taxa missing from the file are reported.
+  </p>
+
+  <h3>What the checks report</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Level</th><th>Effect</th><th>Examples</th></tr></thead>
+      <tbody>
+        <tr><td><span class="sev error">Error</span></td><td>Data can't be used until fixed</td><td>Wrong number of columns; contributions that aren't numbers; rows without a sample or function; no header line; duplicate sample IDs in the metadata; no sample IDs in common between the two files</td></tr>
+        <tr><td><span class="sev warning">Warning</span></td><td>Used, with a consequence you should know</td><td>Rows without a taxon (grouped as unclassified); empty or NA contributions (left out); negative values; samples found in only one of the two files</td></tr>
+        <tr><td><span class="sev info">Note</span></td><td>For information</td><td>How a file was converted; repeated sample / taxon / function rows, which are added together</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="numbers">How the numbers are calculated</h2>
+  <h3>Group values: mean or total</h3>
+  <p>Every view except the per-sample stacked bar works on group values. For group <em>g</em> and any set of taxa and functions:</p>
+  <div class="formula">total(g) = sum of contributions over all samples in g
+mean(g)  = total(g) ÷ n(g)
+n(g)     = samples in g that have any row in the table</div>
+  <p>
+    A sample with no row for a particular taxon and function counts as zero, so a rare function is not inflated by
+    averaging only over the samples where it was seen. Samples with no value in the grouping column, or with no data
+    at all, are left out and reported.
+  </p>
+
+  <h3>Collapsing taxonomy</h3>
+  <ul>
+    <li>Ranks are found by their prefixes (<code>k__</code> or <code>d__</code>, <code>p__</code>, <code>c__</code>, <code>o__</code>, <code>f__</code>, <code>g__</code>, <code>s__</code>), not by position, with <code>;</code>, <code>|</code> or HUMAnN's <code>g__X.s__Y</code> as separators.</li>
+    <li>Values such as <code>NA</code>, <code>unclassified</code> or empty mean the rank is unassigned.</li>
+    <li>Taxa are grouped by their whole lineage down to the chosen rank, so two genera with the same name under different families stay separate.</li>
+    <li>A taxon with no name at the chosen rank is labelled after its nearest named parent, such as <em>Unclassified Neisseriaceae</em>.</li>
+  </ul>
+
+  <h3>Ranking functions</h3>
+  <p>The heatmap and the Sankey both pick their top functions with the same ranking, chosen in the toolbar:</p>
+  <ul>
+    <li><strong>Highest overall:</strong> the sum of the function's group values. With mean values, each group weighs the same however many samples it has.</li>
+    <li><strong>Largest difference between groups:</strong> the highest group value minus the lowest, with a group lacking the function counted as zero.</li>
+  </ul>
+  <p>
+    The heatmap also draws this difference as a column beside it. With two groups it is signed (second group minus
+    first), so the bar's direction shows which group is higher. With more groups it is highest minus lowest.
+  </p>
+  <div class="note">
+    <p>An absolute difference tends to favour abundant functions. These are descriptive comparisons of group means, not statistical tests.</p>
+  </div>
+
+  <h3>Top N and Other</h3>
+  <p>
+    Charts show a fixed number of items and fold the rest into a grey <em>Other</em>, so a large table never produces
+    an unreadable chart. Taxa are ranked by their value in the data on screen: by total flow in the Sankey, and by group
+    values in the stacked bar, so the taxa and their colours stay put when switching between per-group and per-sample
+    bars.
+  </p>
+
+  <h3>Sankey flows</h3>
+  <p>
+    A group → taxon link carries that taxon's group value summed over the functions shown. A taxon → function link
+    carries its value summed over the groups. Flow in and out of every taxon therefore balances. Highlighting a group or
+    function splits each link into its own share and a faded remainder, so the layout never shifts and the highlighted
+    part is drawn to scale.
+  </p>
+
+  <h2 id="views">The four views</h2>
+  <p>
+    A sticky toolbar holds the settings every view shares: group-by column, taxonomic level, mean or total, function
+    ranking and function search. The views run down the page in the order you are likely to drill down. Selecting
+    something only changes views below it, so the page doesn't jump.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>View</th><th>Shows</th><th>Its own controls</th></tr></thead>
+      <tbody>
+        <tr><td>Sankey</td><td>Groups → taxa → functions for the top functions. Click a group, taxon or function to highlight its paths; drag nodes to rearrange.</td><td>Number of functions (5–20) and taxa (4–30, plus Other)</td></tr>
+        <tr><td>Stacked bar</td><td>The taxa behind the selected function, top 8 plus Other.</td><td>One bar per group or per sample; absolute or relative</td></tr>
+        <tr><td>Heatmap</td><td>Function × group values for the top functions, with the difference column. Clicking a function scrolls up to its stacked bar.</td><td>Top 25–200; ranking; log, linear or within-function colour</td></tr>
+        <tr><td>Table</td><td>Group × taxon × function rows, largest 200 shown, filtered to the selected function.</td><td>Show higher ranks as columns</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>A <strong>Try the example data</strong> button loads the TSD metagenomes from the original JarrVis: 229,340 rows, 10 samples in two groups, Kraken2 taxonomy and 995 EC numbers.</p>
+
+  <h2 id="colour">Colour and accessibility</h2>
+  <ul>
+    <li><strong>Amounts</strong> use one blue ramp, light to dark (reversed in dark mode, so small values always fade into the background).</li>
+    <li><strong>Taxa</strong> use 8 fixed colours, checked to stay distinct for the common forms of colour blindness. They are handed out in a fixed order and never reused; a 9th taxon is grey and keeps its label, or joins Other.</li>
+    <li><strong>Differences</strong> use a blue ↔ red pair around zero.</li>
+    <li>Names are always written out, in labels, legends or tooltips, so no information depends on colour alone. Text uses text colours, never a series colour.</li>
+    <li>Charts follow the system's light or dark mode and redraw when it changes.</li>
+  </ul>
+
+  <h2 id="export">Export</h2>
+  <p>
+    Each chart downloads as SVG (vector, for editing in Illustrator or Inkscape), PNG (3× resolution) and TSV (the full
+    summary behind it, not just what is drawn). Images are always drawn in light colours on white, whatever the screen
+    mode, and include the stacked bar's legend. The table downloads as TSV with one column per rank. Files are created
+    in the browser; nothing is sent anywhere.
+  </p>
+
+  <h2 id="code">Code map</h2>
+  <p>Built with Svelte 5 and TypeScript on Vite, DuckDB-WASM for data and Apache ECharts (SVG renderer) for charts.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>File</th><th>Role</th></tr></thead>
+      <tbody>
+        <tr><td><code>lib/sql.ts</code></td><td>The small <code>Sql</code> interface all data code is written against, so the same code runs in the browser and in tests</td></tr>
+        <tr><td><code>lib/db.ts</code></td><td>The one DuckDB instance in the browser; files are read lazily, not copied into memory</td></tr>
+        <tr><td><code>lib/load.ts</code></td><td>Reading files into text tables, one at a time, via staging tables</td></tr>
+        <tr><td><code>lib/formats.ts</code></td><td>Format detection and conversion of PICRUSt2 and HUMAnN output</td></tr>
+        <tr><td><code>lib/validate.ts</code></td><td>Checks for the table and metadata, the sample-ID cross-check, and the clean tables</td></tr>
+        <tr><td><code>lib/taxmap.ts</code></td><td>The optional taxonomy file</td></tr>
+        <tr><td><code>lib/aggregate.ts</code></td><td>Rank parsing, group values, rankings, and the summaries behind each view</td></tr>
+        <tr><td><code>lib/view.svelte.ts</code></td><td>The shared view state: plain data, ready to be saved</td></tr>
+        <tr><td><code>lib/echarts.ts</code></td><td>Chart set-up and the colour palettes</td></tr>
+        <tr><td><code>lib/export.ts</code>, <code>chartExport.ts</code></td><td>SVG, PNG and TSV files</td></tr>
+        <tr><td><code>components/</code></td><td>One component per view, plus the toolbar, input panels and export buttons</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="testing">Testing and deployment</h2>
+  <ul>
+    <li>The data layer has automated tests (94 at present) that run the same DuckDB engine and SQL as the browser, on small hand-made tables and on the committed example files.</li>
+    <li>Every push to the main branch type-checks, tests and builds the app, then publishes it to GitHub Pages. A failing check stops the release.</li>
+    <li>Each change is also checked by hand in the browser before it is committed.</li>
+  </ul>
+
+  <h2 id="next">Limits and what's next</h2>
+  <h3>Current limits</h3>
+  <ul>
+    <li>Group comparisons are descriptive. There are no significance tests or standardized effect sizes yet.</li>
+    <li>Data is never saved: reloading the page means loading the files again.</li>
+    <li>The tool is designed for a desktop screen; on a phone the toolbar takes too much room.</li>
+    <li>Not yet tested on the Bedford Basin PICRUSt2 and IBD HUMAnN2 datasets from the preprint.</li>
+  </ul>
+  <h3>Planned</h3>
+  <ul>
+    <li><strong>Saved views and shareable links.</strong> Settings, not data, stored in the link or in the browser; whoever opens a link loads the same files and sees the same view. Links to the example data open it directly.</li>
+    <li><strong>Effect sizes.</strong> Rank functions by Cohen's d or log2 fold change, alongside the absolute difference.</li>
+    <li><strong>More filters.</strong> Taxon search, a contribution or prevalence threshold, choosing and reordering groups (e.g. months in a time series).</li>
+    <li><strong>Comparison mode.</strong> Two groups side by side.</li>
+    <li><strong>More inputs and output.</strong> Microbiome Helper output, and PDF export.</li>
+  </ul>
+
+  <footer>
+    JarrVis web rebuild · design notes, November 2026. Based on the original <a href="https://github.com/dhwanidesai/JarrVis">JarrVis</a>.
+  </footer>
+</div>
