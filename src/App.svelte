@@ -13,6 +13,14 @@
   import type { Sql } from './lib/sql'
   import { formatShort, STRAT_FORMATS, type StratFormat } from './lib/formats'
   import {
+    dropTaxonomyMap,
+    TAXMAP,
+    TAXMAP_RAW,
+    taxonomyMatch,
+    validateTaxonomyMap,
+    type TaxMapSummary,
+  } from './lib/taxmap'
+  import {
     crossCheck,
     META,
     META_RAW,
@@ -37,6 +45,10 @@
   let strat = $state(emptyPanel())
   let meta = $state(emptyPanel())
   let stratSummary = $state<StratifiedSummary | null>(null)
+  let tax = $state(emptyPanel())
+  let taxSummary = $state<TaxMapSummary | null>(null)
+  /** The taxonomy file's own issues; the match against the table is added after them. */
+  let taxIssues: Issue[] = []
   /** How to read the stratified table; 'auto' detects it from the columns. */
   let stratFormat = $state<StratFormat | 'auto'>('auto')
   /** The last stratified file, so it can be read again when the format changes. */
@@ -97,11 +109,38 @@
       : null
     view.fn = null
     view.highlight = null
+    await refreshTaxonomy()
+    await updateCross()
+  }
+
+  /** Re-split the table's taxa into ranks (using the taxonomy file, if any) and recheck the match. */
+  async function refreshTaxonomy() {
+    const sql = await getSql()
     if (stratSummary) {
-      levels = [...(await buildTaxonomy(await getSql())), 'taxon']
+      levels = [...(await buildTaxonomy(sql)), 'taxon']
       if (!levels.includes(view.level)) view.level = levels.includes('genus') ? 'genus' : levels[0]
     }
-    await updateCross()
+    tax.issues = [...taxIssues, ...(stratSummary && taxSummary ? await taxonomyMatch(sql) : [])]
+  }
+
+  async function onTax(file: File) {
+    taxSummary = await loadInto(tax, file, TAXMAP_RAW, TAXMAP, validateTaxonomyMap)
+    taxIssues = tax.issues
+    tax.summary = taxSummary ? `${plural(taxSummary.ids, 'ID')} · lineage from ${taxSummary.source}` : null
+    const hadRanks = levels.length > 1
+    await refreshTaxonomy()
+    // Taxa that were bare IDs now have ranks, so start at genus rather than "as given".
+    if (!hadRanks && view.level === 'taxon' && levels.includes('genus')) view.level = 'genus'
+    dataVersion++
+  }
+
+  async function removeTax() {
+    await dropTaxonomyMap(await getSql())
+    Object.assign(tax, emptyPanel())
+    taxSummary = null
+    taxIssues = []
+    await refreshTaxonomy()
+    dataVersion++
   }
 
   async function onMeta(file: File) {
@@ -129,6 +168,8 @@
         return new File([await res.blob()], name)
       }
       const [table, metadata] = await Promise.all([fetchFile('TSD-stratified.tsv.gz'), fetchFile('TSD-metadata.tsv')])
+      // The example has its lineages in the table, so a taxonomy file from earlier doesn't apply.
+      if (taxSummary || tax.fileName) await removeTax()
       stratFormat = 'auto'
       await onStrat(table)
       await onMeta(metadata)
@@ -184,6 +225,17 @@
       panel={meta}
       onfile={onMeta}
     />
+    <InputPanel
+      title="3. Taxonomy (optional)"
+      description="Only needed when the table's taxa are IDs without a lineage, such as PICRUSt2 sequence IDs. IDs in the first column, then a lineage column (a QIIME 2 taxonomy.tsv works) or one column per rank (Kingdom … Species)."
+      label="Choose the taxonomy"
+      panel={tax}
+      onfile={onTax}
+    >
+      {#if tax.fileName && !tax.loading}
+        <button type="button" class="remove" onclick={removeTax}>Remove taxonomy file</button>
+      {/if}
+    </InputPanel>
   </div>
 
   {#if cross}
@@ -255,6 +307,17 @@
     margin: 0;
     color: var(--error);
   }
+  .remove {
+    font: inherit;
+    font-size: 0.85rem;
+    color: var(--accent);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.25rem 0.6rem;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+  }
   .format {
     display: flex;
     flex-direction: column;
@@ -275,7 +338,7 @@
   }
   .inputs {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
     gap: 1rem;
   }
   .cross {

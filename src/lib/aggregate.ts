@@ -1,5 +1,6 @@
 // Taxonomy parsing and group-level aggregation over the clean `strat` and `metadata` tables.
 import { sqlIdent as id, sqlString, type Sql } from './sql'
+import { hasTaxonomyMap, TAXMAP } from './taxmap'
 import { META, STRAT } from './validate'
 
 export const TAXONOMY = 'taxonomy'
@@ -31,10 +32,15 @@ const UNASSIGNED = ['', 'na', 'nan', 'none', 'unclassified', 'unknown', 'unassig
 
 /**
  * Split each distinct taxon in `strat` into ranks and store them in TAXONOMY.
- * Handles ';' and '|' separators and HUMAnN's 'g__X.s__Y'. Returns the ranks that have
- * at least one assigned value, i.e. the levels the data can be collapsed to.
+ * Handles ';' and '|' separators and HUMAnN's 'g__X.s__Y'. When a taxonomy file is loaded
+ * (TAXMAP), a taxon found there is parsed from its mapped lineage instead. Returns the ranks
+ * that have at least one assigned value, i.e. the levels the data can be collapsed to.
  */
 export async function buildTaxonomy(sql: Sql): Promise<Rank[]> {
+  const distinct = `SELECT DISTINCT taxon FROM ${id(STRAT)}`
+  const source = (await hasTaxonomyMap(sql))
+    ? `SELECT s.taxon, coalesce(m.lineage, s.taxon) AS lineage FROM (${distinct}) s LEFT JOIN ${id(TAXMAP)} m ON m.id = s.taxon`
+    : `SELECT taxon, taxon AS lineage FROM (${distinct})`
   const cols = RANKS.map((r) => {
     const re = sqlString(`^${r.prefix}__`)
     const raw = `trim(regexp_replace(list_filter(parts, x -> regexp_matches(x, ${re}))[1], ${re}, ''))`
@@ -44,8 +50,8 @@ export async function buildTaxonomy(sql: Sql): Promise<Rank[]> {
     CREATE OR REPLACE TABLE ${id(TAXONOMY)} AS
     WITH p AS (
       SELECT taxon,
-             regexp_split_to_array(regexp_replace(taxon, '\\.([a-z]__)', ';\\1', 'g'), '\\s*[;|]\\s*') AS parts
-      FROM (SELECT DISTINCT taxon FROM ${id(STRAT)})
+             regexp_split_to_array(regexp_replace(lineage, '\\.([a-z]__)', ';\\1', 'g'), '\\s*[;|]\\s*') AS parts
+      FROM (${source})
     )
     SELECT taxon, ${cols.join(',\n           ')} FROM p`)
   const [counts] = await sql.query(
