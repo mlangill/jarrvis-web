@@ -163,20 +163,35 @@ export async function groupedRows(sql: Sql): Promise<GroupedRow[]> {
     SELECT "group", taxon, path, function, value FROM ${id(GROUPED)} ORDER BY value DESC, "group", taxon, function`)
 }
 
+/**
+ * How functions are ranked for the top-N cut: by the sum of their group values (most abundant
+ * overall), or by the gap between their highest and lowest group (largest difference).
+ */
+export type FunctionRank = 'total' | 'difference'
+
+/** Highest minus lowest group value of a function in `v`; groups without a row count as 0. */
+const DIFFERENCE = `CASE WHEN count(*) < (SELECT count(*) FROM n)
+    THEN greatest(max(value), 0) - least(min(value), 0)
+    ELSE max(value) - min(value) END`
+
 export interface HeatmapOptions {
   groupBy: string
   stat: Stat
   /** Case-insensitive substring a function must contain; empty for all. */
   search?: string
-  /** How many functions to keep, largest total first. */
+  /** How many functions to keep, highest score first. */
   top: number
+  /** What the score is; defaults to 'total'. */
+  rank?: FunctionRank
 }
 
 export interface HeatmapResult {
   groups: GroupInfo[]
   ungroupedSamples: number
-  /** Functions shown, largest first. */
+  /** Functions shown, highest score first. */
   functions: string[]
+  /** scores[f]: the ranking score of functions[f] (sum of group values, or max − min group). */
+  scores: number[]
   /** Functions matching the search before the top-N cut. */
   matchingFunctions: number
   /** values[f][g]: value for functions[f] in groups[g]; 0 where the function is absent. */
@@ -184,14 +199,19 @@ export interface HeatmapResult {
 }
 
 /**
- * Function × group values, summed over all taxa. Functions are ranked by the sum of their
- * group values (so with 'mean', groups weigh equally whatever their size) and cut to `top`.
+ * Function × group values, summed over all taxa, cut to the `top` highest-scoring functions.
+ * With rank 'total' the score is the sum of the group values (so with 'mean', groups weigh
+ * equally whatever their size). With 'difference' it is the highest group value minus the
+ * lowest, where a group with no data for the function counts as zero.
  */
-export async function functionHeatmap(sql: Sql, { groupBy, stat, search = '', top }: HeatmapOptions): Promise<HeatmapResult> {
+export async function functionHeatmap(
+  sql: Sql,
+  { groupBy, stat, search = '', top, rank = 'total' }: HeatmapOptions,
+): Promise<HeatmapResult> {
   const value = stat === 'mean' ? 'f.total / n.samples' : 'f.total'
   const term = search.trim()
   const where = term ? `WHERE contains(lower(s.function), ${sqlString(term.toLowerCase())})` : ''
-  const cells = await sql.query<{ grp: string; function: string; value: number; matching: bigint }>(`
+  const cells = await sql.query<{ grp: string; function: string; value: number; score: number; matching: bigint }>(`
     WITH
       ${groupCtes(groupBy)},
       f AS (
@@ -201,10 +221,10 @@ export async function functionHeatmap(sql: Sql, { groupBy, stat, search = '', to
       ),
       v AS (SELECT f.grp, f.function, ${value} AS value FROM f JOIN n USING (grp)),
       ranked AS (
-        SELECT function, sum(value) AS score, count(*) OVER () AS matching FROM v
+        SELECT function, ${rank === 'difference' ? DIFFERENCE : 'sum(value)'} AS score, count(*) OVER () AS matching FROM v
         GROUP BY function ORDER BY score DESC, function LIMIT ${Math.max(1, Math.floor(top))}
       )
-    SELECT v.grp, v.function, v.value, ranked.matching
+    SELECT v.grp, v.function, v.value, ranked.score, ranked.matching
     FROM v JOIN ranked USING (function) ORDER BY ranked.score DESC, v.function`)
 
   const info = await groupInfo(sql, groupBy)
@@ -212,9 +232,13 @@ export async function functionHeatmap(sql: Sql, { groupBy, stat, search = '', to
   const fIndex = new Map(functions.map((f, i) => [f, i]))
   const gIndex = new Map(info.groups.map((g, i) => [g.name, i]))
   const values = functions.map(() => info.groups.map(() => 0))
-  for (const c of cells) values[fIndex.get(c.function)!][gIndex.get(c.grp)!] = Number(c.value)
+  const scores = functions.map(() => 0)
+  for (const c of cells) {
+    values[fIndex.get(c.function)!][gIndex.get(c.grp)!] = Number(c.value)
+    scores[fIndex.get(c.function)!] = Number(c.score)
+  }
 
-  return { ...info, functions, matchingFunctions: Number(cells[0]?.matching ?? 0), values }
+  return { ...info, functions, scores, matchingFunctions: Number(cells[0]?.matching ?? 0), values }
 }
 
 export interface TaxaBarsOptions {

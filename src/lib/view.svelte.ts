@@ -1,7 +1,7 @@
 // The one shared, serializable view state. Every view reads its settings from here, so a
 // selection made in one view can drive the others, and the whole thing can later be saved
 // as JSON or in the URL. Keep it plain data: no derived values or query results.
-import type { Level, Stat } from './aggregate'
+import type { FunctionRank, Level, Stat } from './aggregate'
 
 /** How heatmap cells are colored. */
 export type HeatScale = 'linear' | 'log' | 'row'
@@ -15,8 +15,10 @@ export interface ViewState {
   stat: Stat
   /** Selected function, shared across views; null for none. */
   fn: string | null
-  /** Heatmap: function search text. */
+  /** Heatmap and Sankey: function search text. */
   search: string
+  /** Heatmap and Sankey: rank functions by overall value or by largest difference between groups. */
+  rank: FunctionRank
   /** Heatmap: how many functions to show. */
   top: number
   /** Heatmap: color scale. */
@@ -39,6 +41,7 @@ export const view: ViewState = $state({
   stat: 'mean',
   fn: null,
   search: '',
+  rank: 'total',
   top: 50,
   scale: 'log',
   barsBy: 'group',

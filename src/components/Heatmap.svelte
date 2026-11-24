@@ -24,7 +24,7 @@
 
   // Query whenever the inputs change.
   $effect(() => {
-    const opts = { groupBy: view.groupBy, stat: view.stat, search: view.search, top: view.top }
+    const opts = { groupBy: view.groupBy, stat: view.stat, search: view.search, top: view.top, rank: view.rank }
     void dataVersion
     if (!opts.groupBy) return
     const mine = ++request
@@ -93,7 +93,9 @@
             const g = r.groups[gi]
             return `<strong>${escape(r.functions[fi])}</strong><br>${escape(g.name)} (${g.samples} ${
               g.samples === 1 ? 'sample' : 'samples'
-            })<br>${valueName}: <strong>${fmt.format(raw)}</strong>`
+            })<br>${valueName}: <strong>${fmt.format(raw)}</strong><br>${
+              view.rank === 'difference' ? 'Highest − lowest group' : 'Sum across groups'
+            }: ${fmt.format(r.scores[fi])}`
           },
         },
         xAxis: {
@@ -206,11 +208,11 @@
 
   async function onexport(format: ChartFormat | 'tsv') {
     if (!result || !chart) return
-    const name = `heatmap-${view.groupBy}-${view.stat}`
+    const name = `heatmap-${view.groupBy}-${view.stat}-${view.rank}`
     if (format === 'tsv') {
       const r = result
-      const header = ['function', ...r.groups.map((g) => g.name)]
-      download(toTsv(header, r.functions.map((f, i) => [f, ...r.values[i]])), `${safeFileName(`jarrvis-${name}`)}.tsv`)
+      const header = ['function', ...r.groups.map((g) => g.name), view.rank === 'difference' ? 'max_minus_min' : 'sum_of_groups']
+      download(toTsv(header, r.functions.map((f, i) => [f, ...r.values[i], r.scores[i]])), `${safeFileName(`jarrvis-${name}`)}.tsv`)
     } else {
       await saveChart(chart, format, name, (forExport) => render(forExport))
     }
@@ -253,7 +255,7 @@
         No functions match "{view.search}".
       {:else}
         {result.matchingFunctions.toLocaleString()}
-        {view.search ? `functions match "${view.search}"` : 'functions'}{#if result.matchingFunctions > result.functions.length}; showing the {result.functions.length} with the highest values{/if}.
+        {view.search ? `functions match "${view.search}"` : 'functions'}{#if result.matchingFunctions > result.functions.length}; showing the {result.functions.length} {view.rank === 'difference' ? 'with the largest difference between groups (highest − lowest group)' : 'with the highest values summed across groups'}{:else if view.rank === 'difference'}, ordered by the difference between groups (highest − lowest group){/if}.
         {view.stat === 'mean' ? 'Mean per sample in each group' : 'Total per group'}, summed over all taxa.
       {/if}
     </p>

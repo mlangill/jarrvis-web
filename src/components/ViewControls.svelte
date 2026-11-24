@@ -39,6 +39,13 @@
       </select>
     </label>
     <label>
+      Rank functions by
+      <select bind:value={view.rank}>
+        <option value="total">Highest overall</option>
+        <option value="difference">Largest difference between groups</option>
+      </select>
+    </label>
+    <label>
       Search functions
       <input type="search" bind:value={searchInput} oninput={onSearch} placeholder="e.g. EC:2.1 or K00" />
     </label>

@@ -158,10 +158,31 @@ describe('functionHeatmap', () => {
     expect(r.matchingFunctions).toBe(2)
   })
 
+  it('ranks by the largest difference between groups, counting a missing group as zero', async () => {
+    await setup(
+      tsv(HEADER,
+        // EC:big is the most abundant but nearly equal: A = 10, B = 9 → difference 1.
+        ['S1', 'g__X', 'EC:big', '10'], ['S2', 'g__X', 'EC:big', '10'], ['S3', 'g__X', 'EC:big', '9'],
+        // EC:diff: A = 1, B = 6 → difference 5.
+        ['S1', 'g__X', 'EC:diff', '2'], ['S3', 'g__X', 'EC:diff', '6'],
+        // EC:onlyA: A = 3, B absent → difference 3.
+        ['S1', 'g__X', 'EC:onlyA', '6'],
+      ),
+      META,
+    )
+    const total = await functionHeatmap(sql, { groupBy: 'type', stat: 'mean', top: 10 })
+    expect(total.functions).toEqual(['EC:big', 'EC:diff', 'EC:onlyA'])
+    expect(total.scores).toEqual([19, 7, 3])
+    const diff = await functionHeatmap(sql, { groupBy: 'type', stat: 'mean', top: 2, rank: 'difference' })
+    expect(diff.functions).toEqual(['EC:diff', 'EC:onlyA'])
+    expect(diff.scores).toEqual([5, 3])
+    expect(diff.matchingFunctions).toBe(3)
+  })
+
   it('returns no functions when nothing matches', async () => {
     await setup(tsv(HEADER, ['S1', 'g__X', 'EC:1', '1']), META)
     const r = await functionHeatmap(sql, { groupBy: 'type', stat: 'mean', search: 'zzz', top: 10 })
-    expect(r).toMatchObject({ functions: [], values: [], matchingFunctions: 0 })
+    expect(r).toMatchObject({ functions: [], scores: [], values: [], matchingFunctions: 0 })
   })
 
   it('agrees with groupTable totals on the TSD subset', async () => {

@@ -28,6 +28,7 @@
       level: view.level,
       stat: view.stat,
       search: view.search,
+      rank: view.rank,
       n: view.sankeyFunctions,
       topTaxa: Math.min(view.sankeyTaxa, MAX_SERIES),
       fn: view.fn,
@@ -39,7 +40,7 @@
     ;(async () => {
       try {
         const sql = await getSql()
-        const top = await functionHeatmap(sql, { groupBy: opts.groupBy!, stat: opts.stat, search: opts.search, top: opts.n })
+        const top = await functionHeatmap(sql, { groupBy: opts.groupBy!, stat: opts.stat, search: opts.search, top: opts.n, rank: opts.rank })
         // Always include the selected function so it can be highlighted.
         const functions = opts.fn && !top.functions.includes(opts.fn) ? [...top.functions, opts.fn] : top.functions
         const r = await sankeyData(sql, { ...opts, groupBy: opts.groupBy!, functions })
@@ -247,7 +248,7 @@
     <ExportButtons {onexport} disabled={!result || result.nodes.length === 0} />
   </div>
   <p class="desc">
-    Click a group, taxon or function to highlight its paths. Drag nodes to rearrange. Functions follow the function search above.
+    Click a group, taxon or function to highlight its paths. Drag nodes to rearrange. Functions follow the ranking and search above.
   </p>
 
   <div class="controls">
@@ -276,7 +277,7 @@
     <p class="note">No functions to show{view.search ? ` for "${view.search}"` : ''}.</p>
   {:else if result}
     <p class="note">
-      {view.stat === 'mean' ? 'Mean per sample in each group' : 'Total per group'}; link widths are contributions.{#if result.otherTaxa > 0}{' '}{result.otherTaxa} smaller taxa are combined as Other.{/if}
+      Functions with {view.rank === 'difference' ? 'the largest difference between groups' : 'the highest values'}. {view.stat === 'mean' ? 'Mean per sample in each group' : 'Total per group'}; link widths are contributions.{#if result.otherTaxa > 0}{' '}{result.otherTaxa} smaller taxa are combined as Other.{/if}
     </p>
   {/if}
 
