@@ -16,4 +16,4 @@ Run `scripts/fetch-test-data.sh` to download everything here. Files in `large/` 
 
 `public/demo/` holds the example data the app's demo button loads: `TSD-stratified.tsv.gz` (the full TSD table above, gzipped, 2 MB) and `TSD-metadata.tsv` (a copy of the TSD metadata). The fetch script rebuilds them.
 
-The PICRUSt2 and HUMAnN2 files are tiny synthetic tables from unit tests. They're for checking formats, not realistic sizes. The Bedford Basin and IBD datasets named in `PLAN.md` aren't public here yet.
+The files directly under `picrust2/` and `humann2/` are tiny synthetic tables from unit tests. They're for checking formats, not realistic sizes. `picrust2/chemerin/` is the realistic PICRUSt2 set; there's no large real HUMAnN file yet.

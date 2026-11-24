@@ -56,7 +56,7 @@ New views can be added later at little cost, since the data layer is shared.
 2. Group by a metadata column, collapse to a chosen taxonomic level, filter by function search and top N
 3. Render an interactive Sankey with click-to-highlight and hover values
 4. Export SVG and PNG
-5. Test on the Bedford Basin PICRUSt2 data and the IBD HUMAnN2 data from the preprint
+5. Test on real PICRUSt2 and HUMAnN outputs
 
 ## Getting started with Claude Code
 
@@ -107,7 +107,7 @@ Live at https://morganlangille.com/jarrvis-web/. The first prompts and most of v
 - Searching and picking individual taxa; picking individual functions for the Sankey beyond search and top N
 - Locking a highlight and side-by-side comparison of two groups
 - Microbiome Helper input
-- Testing on the Bedford Basin PICRUSt2 and IBD HUMAnN2 data from the preprint
+- Testing on larger, real HUMAnN stratified files (only a tiny synthetic one has been tried)
 
 ### Next: saved views and shareable links (design agreed in outline, decisions open)
 
