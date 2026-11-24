@@ -1,5 +1,8 @@
 <script lang="ts">
+  import GroupedView from './components/GroupedView.svelte'
   import InputPanel, { type PanelState } from './components/InputPanel.svelte'
+  import { buildTaxonomy, type Level } from './lib/aggregate'
+  import { view } from './lib/view.svelte'
   import Issues from './components/Issues.svelte'
   import { duckdbVersion, getSql } from './lib/db'
   import { describeTable, LoadError, loadTable, previewRows } from './lib/load'
@@ -31,6 +34,10 @@
   let stratSummary = $state<StratifiedSummary | null>(null)
   let metaSummary = $state<MetadataSummary | null>(null)
   let cross = $state<{ issues: Issue[]; summary?: CrossSummary } | null>(null)
+  /** Taxonomic levels the current table can be collapsed to (always ends with 'taxon'). */
+  let levels = $state<Level[]>(['taxon'])
+  /** Bumped whenever the clean tables change, so views re-query. */
+  let dataVersion = $state(0)
 
   /** Load a file into `rawTable`, validate it, and fill the panel. Returns the summary if valid. */
   async function loadInto<S>(
@@ -69,6 +76,7 @@
 
   async function updateCross() {
     cross = stratSummary && metaSummary ? await crossCheck(await getSql()) : null
+    dataVersion++
   }
 
   async function onStrat(file: File) {
@@ -76,6 +84,10 @@
     strat.summary = stratSummary
       ? `${plural(stratSummary.rows, 'row')} · ${plural(stratSummary.samples, 'sample')} · ${plural(stratSummary.taxa, 'taxon', 'taxa')} · ${plural(stratSummary.functions, 'function')}`
       : null
+    if (stratSummary) {
+      levels = [...(await buildTaxonomy(await getSql())), 'taxon']
+      if (!levels.includes(view.level)) view.level = levels.includes('genus') ? 'genus' : levels[0]
+    }
     await updateCross()
   }
 
@@ -86,6 +98,8 @@
           metaSummary.groupColumns.map((g) => `${g.name} (${g.levels})`).join(', ') || 'none'
         }`
       : null
+    const names = metaSummary?.groupColumns.map((g) => g.name) ?? []
+    if (!view.groupBy || !names.includes(view.groupBy)) view.groupBy = names[0] ?? null
     await updateCross()
   }
 
@@ -127,6 +141,10 @@
       {/if}
       <Issues issues={cross.issues} />
     </section>
+  {/if}
+
+  {#if ready && metaSummary}
+    <GroupedView groupColumns={metaSummary.groupColumns} {levels} {dataVersion} />
   {/if}
 
   <p class="status">

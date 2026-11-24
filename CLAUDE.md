@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-This repo is a rebuild of JarrVis (https://github.com/dhwanidesai/JarrVis; preprint: https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1). JarrVis visualizes stratified microbiome function tables (sample groups → taxa → functions). **Read `PLAN.md` before starting work**: it has the scope, the architecture and the order of the first prompts. The app (Vite + Svelte 5 + TypeScript + DuckDB-WASM) loads a 4-column stratified table and a sample metadata file, validates both and checks that their sample IDs match. There are no views yet.
+This repo is a rebuild of JarrVis (https://github.com/dhwanidesai/JarrVis; preprint: https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1). JarrVis visualizes stratified microbiome function tables (sample groups → taxa → functions). **Read `PLAN.md` before starting work**: it has the scope, the architecture and the order of the first prompts. The app (Vite + Svelte 5 + TypeScript + DuckDB-WASM) loads a 4-column stratified table and a sample metadata file, validates both and checks that their sample IDs match. It then shows a grouped table: samples grouped by a metadata column, taxa collapsed to a chosen rank, and mean or total contribution per group. There are no charts yet.
 
 ## Commands
 
@@ -25,6 +25,11 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which checks, builds and 
   - `strat(sample, taxon, function, contribution DOUBLE)`: text trimmed, empty taxa become `unclassified`, rows with an empty or NA contribution are dropped.
   - `metadata(sample_id, <group columns>)`: the first column is renamed to `sample_id`.
   A failed validation drops the old clean table. `crossCheck` compares sample IDs between the two tables. The table is read by column position, not by header name. Known other formats (PICRUSt2 contrib, legacy, or wide; HUMAnN) are recognized and get an explanatory error.
+- `src/lib/aggregate.ts`:
+  - `buildTaxonomy` splits each distinct taxon in `strat` into ranks, stored in the `taxonomy` table. Ranks are found by their `k__`/`d__`…`s__` prefix, not by position. It handles `;` and `|` separators and HUMAnN's `g__X.s__Y`, and treats `NA`/`unclassified`/empty as unassigned. It returns the ranks present in the data.
+  - `groupTable` builds the `grouped` table (group × collapsed taxon × function). **Mean is the group total divided by the number of samples in the group that have data**, so an absent row counts as zero. Samples with no group value, or with no data, are left out.
+  - Collapsed taxa are grouped by their full rank path, so homonyms stay separate. They're labelled with the rank name or "Unclassified <nearest known parent>".
+- `src/lib/view.svelte.ts`: the shared view state (`groupBy`, `level`, `stat`). Views bind to it and re-query when it changes. Keep it plain and serializable.
 - `src/App.svelte` / `src/components/InputPanel.svelte`: one panel per input file. Loading a file reruns that file's validation and then `crossCheck`.
 - `src/lib/db.ts`: the one shared DuckDB instance (`getDb()`) and the browser `Sql` (`getSql()`). Browser `File`s are registered with `BROWSER_FILEREADER`, so large files are read lazily instead of copied into memory. The wasm and worker bundles are imported with `?url`, so Vite serves them from this site rather than a CDN. Don't switch to the jsDelivr bundles.
 - `vite.config.ts`: `base: './'` keeps asset paths relative, so the build works under the Pages subpath `/jarrvis-web/`. `@duckdb/duckdb-wasm` is excluded from `optimizeDeps`.
