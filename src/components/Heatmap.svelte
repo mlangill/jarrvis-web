@@ -183,7 +183,7 @@
     }
   })
 
-  /** The heatmap is last on the page, so scroll up to the stacked bar that shows the selected function's taxa. */
+  /** The heatmap sits below the stacked bar, so scroll up to the stacked bar that shows the selected function's taxa. */
   function showTaxa() {
     const target = () => {
       const bars = document.querySelector('section.bars')
@@ -235,6 +235,14 @@
       Show
       <select bind:value={view.top}>
         {#each TOPS as n}<option value={n}>Top {n}</option>{/each}
+      </select>
+    </label>
+    <label>
+      Ranked by
+      <!-- Same setting as the toolbar's "Rank functions by", which also drives the Sankey. -->
+      <select bind:value={view.rank}>
+        <option value="total">Highest overall</option>
+        <option value="difference">Largest difference between groups</option>
       </select>
     </label>
     <label>

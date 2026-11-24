@@ -182,8 +182,8 @@
     <ViewControls groupColumns={metaSummary.groupColumns} {levels} />
     <Sankey {dataVersion} />
     <StackedBar {dataVersion} />
-    <GroupedView {levels} {dataVersion} />
     <Heatmap {dataVersion} />
+    <GroupedView {levels} {dataVersion} />
   {/if}
 
   <p class="status">
