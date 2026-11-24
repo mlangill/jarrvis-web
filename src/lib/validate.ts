@@ -1,10 +1,13 @@
 // Checks for the two version-1 inputs: the 4-column stratified table and the sample metadata.
 // Both are loaded as all-text tables (STRAT_RAW, META_RAW); validation finds problems and, when
 // there are no errors, writes the clean typed tables (STRAT, META) that every view reads from.
-import type { Column } from './load'
+import { conversion, detectFormat, type StratFormat } from './formats'
+import { describeTable, type Column } from './load'
 import { sqlIdent as id, sqlString, type Sql } from './sql'
 
 export const STRAT_RAW = 'strat_raw'
+/** STRAT_RAW converted to the 4 columns, when it was in another format. */
+export const STRAT_CONVERTED = 'strat_converted'
 export const STRAT = 'strat'
 export const META_RAW = 'metadata_raw'
 export const META = 'metadata'
@@ -21,6 +24,8 @@ export interface Issue {
 export const hasErrors = (issues: Issue[]) => issues.some((i) => i.severity === 'error')
 
 export interface StratifiedSummary {
+  /** The format the table was read as. */
+  format: StratFormat
   rows: number
   samples: number
   taxa: number
@@ -56,33 +61,36 @@ const missingList = MISSING.map(sqlString).join(', ')
 const num = (v: unknown) => Number(v ?? 0)
 const plural = (n: number, word: string, pluralWord = `${word}s`) => `${n.toLocaleString()} ${n === 1 ? word : pluralWord}`
 
-/** Name the format if the columns match a known stratified output that isn't the 4-column format. */
-export function recognizeFormat(columns: Column[]): string | null {
-  const names = columns.map((c) => c.name)
-  const has = (n: string) => names.includes(n)
-  if (has('norm_taxon_function_contrib') || has('taxon_function_abun')) {
-    return 'PICRUSt2 contributions output (metagenome_contrib)'
-  }
-  if (has('ContributionPercentOfSample') || has('CountContributedByOTU')) return 'legacy PICRUSt2 contributions output'
-  if (/^#\s*(Gene Family|Pathway)/i.test(names[0] ?? '')) return 'HUMAnN stratified output'
-  if (names[1] === 'sequence') return 'PICRUSt2 wide stratified output'
-  return null
-}
-
-/** Validate the stratified table in STRAT_RAW and, if it has no errors, build STRAT. */
-export async function validateStratified(sql: Sql, columns: Column[]): Promise<Result<StratifiedSummary>> {
+/**
+ * Validate the stratified table in STRAT_RAW and, if it has no errors, build STRAT. A table in
+ * another format (detected, or as given) is first converted into STRAT_CONVERTED; STRAT_RAW is
+ * left as loaded, so it can be validated again as a different format.
+ */
+export async function validateStratified(
+  sql: Sql,
+  rawColumns: Column[],
+  requested: StratFormat | 'auto' = 'auto',
+): Promise<Result<StratifiedSummary>> {
   await sql.query(`DROP TABLE IF EXISTS ${id(STRAT)}`)
+  await sql.query(`DROP TABLE IF EXISTS ${id(STRAT_CONVERTED)}`)
   const issues: Issue[] = []
-  const raw = id(STRAT_RAW)
+  const format = requested === 'auto' ? detectFormat(rawColumns) : requested
+  let raw = id(STRAT_RAW)
+  let columns = rawColumns
 
-  const format = recognizeFormat(columns)
-  if (format) {
-    issues.push({
-      severity: 'error',
-      message: `This looks like ${format}. Direct import of that format is planned; for now, convert it to the 4-column format (sample, taxon, function, contribution) with the scripts in the original JarrVis repository.`,
-    })
-    return { issues }
+  if (format !== 'jarrvis') {
+    const conv = conversion(format, rawColumns, raw)
+    if ('error' in conv) return { issues: [{ severity: 'error', message: conv.error }] }
+    if (conv.check) {
+      const [{ n }] = await sql.query(conv.check.sql)
+      if (num(n) === 0) return { issues: [{ severity: 'error', message: conv.check.error }] }
+    }
+    await sql.query(`CREATE TABLE ${id(STRAT_CONVERTED)} AS SELECT * FROM (${conv.select})`)
+    raw = id(STRAT_CONVERTED)
+    columns = await describeTable(sql, STRAT_CONVERTED)
+    issues.push({ severity: 'info', message: conv.note })
   }
+
   if (columns.length !== 4) {
     issues.push({
       severity: 'error',
@@ -186,7 +194,7 @@ export async function validateStratified(sql: Sql, columns: Column[]): Promise<R
 
   return {
     issues,
-    summary: { rows: num(sum.rows), samples: num(sum.samples), taxa: num(sum.taxa), functions: num(sum.functions) },
+    summary: { format, rows: num(sum.rows), samples: num(sum.samples), taxa: num(sum.taxa), functions: num(sum.functions) },
   }
 }
 

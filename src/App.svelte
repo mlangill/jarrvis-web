@@ -11,6 +11,7 @@
   import { duckdbVersion, getSql } from './lib/db'
   import { describeTable, LoadError, loadTable, previewRows } from './lib/load'
   import type { Sql } from './lib/sql'
+  import { formatShort, STRAT_FORMATS, type StratFormat } from './lib/formats'
   import {
     crossCheck,
     META,
@@ -36,6 +37,10 @@
   let strat = $state(emptyPanel())
   let meta = $state(emptyPanel())
   let stratSummary = $state<StratifiedSummary | null>(null)
+  /** How to read the stratified table; 'auto' detects it from the columns. */
+  let stratFormat = $state<StratFormat | 'auto'>('auto')
+  /** The last stratified file, so it can be read again when the format changes. */
+  let stratFile: File | null = null
   let metaSummary = $state<MetadataSummary | null>(null)
   let cross = $state<{ issues: Issue[]; summary?: CrossSummary } | null>(null)
   /** Taxonomic levels the current table can be collapsed to (always ends with 'taxon'). */
@@ -84,9 +89,11 @@
   }
 
   async function onStrat(file: File) {
-    stratSummary = await loadInto(strat, file, STRAT_RAW, STRAT, validateStratified)
+    stratFile = file
+    const format = stratFormat
+    stratSummary = await loadInto(strat, file, STRAT_RAW, STRAT, (sql, columns) => validateStratified(sql, columns, format))
     strat.summary = stratSummary
-      ? `${plural(stratSummary.rows, 'row')} · ${plural(stratSummary.samples, 'sample')} · ${plural(stratSummary.taxa, 'taxon', 'taxa')} · ${plural(stratSummary.functions, 'function')}`
+      ? `${formatShort(stratSummary.format)} · ${plural(stratSummary.rows, 'row')} · ${plural(stratSummary.samples, 'sample')} · ${plural(stratSummary.taxa, 'taxon', 'taxa')} · ${plural(stratSummary.functions, 'function')}`
       : null
     view.fn = null
     view.highlight = null
@@ -122,6 +129,7 @@
         return new File([await res.blob()], name)
       }
       const [table, metadata] = await Promise.all([fetchFile('TSD-stratified.tsv.gz'), fetchFile('TSD-metadata.tsv')])
+      stratFormat = 'auto'
       await onStrat(table)
       await onMeta(metadata)
     } catch (err) {
@@ -152,11 +160,23 @@
   <div class="inputs">
     <InputPanel
       title="1. Stratified table"
-      description="Four columns in this order: sample, taxon, function, contribution. A header line is required."
+      description="The 4-column format (sample, taxon, function, contribution), PICRUSt2 contribution or stratified output, or HUMAnN stratified output. A header line is required."
       label="Choose the table"
       panel={strat}
       onfile={onStrat}
-    />
+    >
+      <label class="format">
+        Format
+        <select
+          bind:value={stratFormat}
+          disabled={strat.loading !== null}
+          onchange={() => stratFile && onStrat(stratFile)}
+        >
+          <option value="auto">Auto-detect</option>
+          {#each STRAT_FORMATS as f}<option value={f.key}>{f.label}</option>{/each}
+        </select>
+      </label>
+    </InputPanel>
     <InputPanel
       title="2. Sample metadata"
       description="Sample IDs in the first column (e.g. sample_id), then one or more columns to group samples by."
@@ -234,6 +254,24 @@
     flex-basis: 100%;
     margin: 0;
     color: var(--error);
+  }
+  .format {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .format select {
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.3rem 0.5rem;
+    max-width: 100%;
   }
   .inputs {
     display: grid;

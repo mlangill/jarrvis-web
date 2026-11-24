@@ -43,7 +43,7 @@ describe('validateStratified', () => {
     expect(r.issues).toEqual([
       expect.objectContaining({ severity: 'info', message: expect.stringMatching(/^270 sample \/ taxon \/ function combinations appear more than once/) }),
     ])
-    expect(r.summary).toEqual({ rows: 3580, samples: 10, taxa: expect.any(Number), functions: 5 })
+    expect(r.summary).toEqual({ format: 'jarrvis', rows: 3580, samples: 10, taxa: expect.any(Number), functions: 5 })
   })
 
   it('builds the clean table with trimmed text and numeric contributions', async () => {
@@ -68,14 +68,56 @@ describe('validateStratified', () => {
   })
 
   it.each([
-    ['picrust2/metagenome_contrib.tsv.gz', /PICRUSt2 contributions output/],
-    ['picrust2/metagenome_contrib_legacy.tsv.gz', /legacy PICRUSt2/],
-    ['picrust2/pred_metagenome_strat.tsv.gz', /PICRUSt2 wide stratified/],
-    ['picrust2/path_abun_strat.tsv.gz', /PICRUSt2 wide stratified/],
-    ['humann2/humann2_strat_example.tsv.gz', /HUMAnN stratified/],
-  ])('recognizes %s as another format', async (path, pattern) => {
+    ['picrust2/metagenome_contrib.tsv.gz', 'picrust2-contrib', { rows: 9, samples: 2, taxa: 8, functions: 3 }],
+    ['picrust2/metagenome_contrib_legacy.tsv.gz', 'picrust2-legacy', { rows: 9, samples: 2, taxa: 8, functions: 3 }],
+    ['picrust2/pred_metagenome_strat.tsv.gz', 'picrust2-wide', { rows: 66, samples: 3, taxa: 10, functions: 3 }],
+    ['picrust2/path_abun_strat.tsv.gz', 'picrust2-wide', { rows: 9, samples: 2, taxa: 3, functions: 2 }],
+    ['humann2/humann2_strat_example.tsv.gz', 'humann', { rows: 18, samples: 4, taxa: 3, functions: 14 }],
+  ])('detects and converts %s', async (path, format, counts) => {
     const r = await strat(path.split('/').pop()!, testFile(path))
-    expect(errors(r.issues)).toEqual([expect.stringMatching(pattern)])
+    expect(errors(r.issues)).toEqual([])
+    expect(r.issues[0]).toMatchObject({ severity: 'info', message: expect.stringMatching(/^Read as /) })
+    expect(r.summary).toEqual({ format, ...counts })
+  })
+
+  it('reads PICRUSt2 contributions with taxon_function_abun as the contribution', async () => {
+    await strat('c.tsv.gz', testFile('picrust2/metagenome_contrib.tsv.gz'))
+    expect((await previewRows(sql, 1, STRAT))[0]).toEqual({
+      sample: 'sample1',
+      taxon: '20e568023c10eaac834f1c110aacea18',
+      function: 'EC:1.1.1.1',
+      contribution: 52,
+    })
+  })
+
+  it('splits HUMAnN function|taxon rows, drops totals, specials and zeros, and trims sample suffixes', async () => {
+    const r = await strat('h.tsv', tsv(
+      ['# Pathway', 'S1_Abundance-RPKs', 'S2_Abundance'],
+      ['PWY-1: thing', '5', '0'],
+      ['PWY-1: thing|g__Bacteroides.s__Bacteroides_dorei', '3', '0'],
+      ['PWY-1: thing|unclassified', '2', '1'],
+      ['UNINTEGRATED|g__Bacteroides.s__Bacteroides_dorei', '9', '9'],
+      ['UNMAPPED', '7', '7'],
+    ))
+    expect(errors(r.issues)).toEqual([])
+    const rows = await sql.query(`SELECT * FROM ${STRAT} ORDER BY sample, taxon`)
+    expect(rows).toEqual([
+      { sample: 'S1', taxon: 'g__Bacteroides.s__Bacteroides_dorei', function: 'PWY-1: thing', contribution: 3 },
+      { sample: 'S1', taxon: 'unclassified', function: 'PWY-1: thing', contribution: 2 },
+      { sample: 'S2', taxon: 'unclassified', function: 'PWY-1: thing', contribution: 1 },
+    ])
+  })
+
+  it('rejects a HUMAnN table with no per-taxon rows', async () => {
+    const r = await strat('h.tsv', tsv(['# Gene Family', 'S1'], ['UniRef90_X', '5']))
+    expect(errors(r.issues)).toEqual([expect.stringMatching(/no per-taxon rows/)])
+  })
+
+  it('uses a chosen format instead of detecting one, and explains a mismatch', async () => {
+    const t = await loadTable(sql, 't.tsv', tsv(HEADER, ['S1', 'g__A', 'EC:1', '1']), { table: STRAT_RAW, allVarchar: true })
+    const r = await validateStratified(sql, t.columns, 'picrust2-contrib')
+    expect(errors(r.issues)).toEqual([expect.stringMatching(/doesn't look like PICRUSt2 contributions output.*Found: Sample, Genus, Gene, Contribution/)])
+    expect((await validateStratified(sql, t.columns, 'jarrvis')).summary?.format).toBe('jarrvis')
   })
 
   it('reports non-numeric contributions with examples', async () => {

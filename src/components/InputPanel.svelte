@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte'
   import type { Column } from '../lib/load'
   import type { Issue } from '../lib/validate'
   import FileDrop from './FileDrop.svelte'
@@ -20,8 +21,16 @@
     label,
     panel,
     onfile,
-  }: { title: string; description: string; label: string; panel: PanelState; onfile: (file: File) => void } =
-    $props()
+    children,
+  }: {
+    title: string
+    description: string
+    label: string
+    panel: PanelState
+    onfile: (file: File) => void
+    /** Extra controls shown above the file picker. */
+    children?: Snippet
+  } = $props()
 
   const ok = $derived(panel.fileName !== null && panel.summary !== null)
 </script>
@@ -29,6 +38,7 @@
 <section class="panel" class:ok>
   <h2>{title}</h2>
   <p class="desc">{description}</p>
+  {@render children?.()}
   <FileDrop {onfile} {label} disabled={panel.loading !== null} />
 
   {#if panel.loading}
