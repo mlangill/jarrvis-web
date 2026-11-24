@@ -2,7 +2,10 @@
   import { onMount } from 'svelte'
   import { functionHeatmap, sankeyData, type SankeyData, type SankeyLink } from '../lib/aggregate'
   import { getSql } from '../lib/db'
-  import { chartTheme, echarts, MAX_SERIES } from '../lib/echarts'
+  import { chartTheme, initChart, MAX_SERIES, type echarts } from '../lib/echarts'
+  import { saveChart, type ChartFormat } from '../lib/chartExport'
+  import { download, safeFileName, toTsv } from '../lib/export'
+  import ExportButtons from './ExportButtons.svelte'
   import { view } from '../lib/view.svelte'
 
   let { dataVersion }: { dataVersion: number } = $props()
@@ -90,10 +93,10 @@
     return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
   }
 
-  function render() {
+  function render(forExport = false) {
     if (!chart || !result || result.nodes.length === 0) return
     const r = result
-    const t = chartTheme(dark)
+    const t = chartTheme(dark && !forExport)
     const byId = new Map(r.nodes.map((n) => [n.id, n]))
     const taxonColor = (id: string) => {
       const slot = byId.get(id)?.colorSlot ?? -1
@@ -181,7 +184,7 @@
     dark = mq.matches
     const onScheme = () => (dark = mq.matches)
     mq.addEventListener('change', onScheme)
-    chart = echarts.init(el)
+    chart = initChart(el)
     chart.on('click', (p) => {
       if (p.dataType !== 'node') return
       const id = (p.data as { name: string }).name
@@ -208,6 +211,27 @@
     render()
   })
 
+  async function onexport(format: ChartFormat | 'tsv') {
+    if (!result || !chart) return
+    const name = `sankey-${view.groupBy}-${view.level}-${view.stat}`
+    if (format === 'tsv') {
+      const byId = new Map(result.nodes.map((n) => [n.id, n]))
+      const rows = result.flows.map((f) => [
+        byId.get(f.group)!.label,
+        byId.get(f.taxon)!.label,
+        byId.get(f.taxon)!.title,
+        byId.get(f.fn)!.label,
+        f.value,
+      ])
+      download(
+        toTsv(['group', 'taxon', 'lineage', 'function', view.stat === 'mean' ? 'mean_per_sample' : 'total'], rows),
+        `${safeFileName(`jarrvis-${name}`)}.tsv`,
+      )
+    } else {
+      await saveChart(chart, format, name, (forExport) => render(forExport))
+    }
+  }
+
   const height = $derived.by(() => {
     if (!result) return 420
     const perColumn = ['group', 'taxon', 'function'].map((c) => result!.nodes.filter((n) => n.column === c).length)
@@ -218,7 +242,10 @@
 </script>
 
 <section class="sankey" aria-busy={busy}>
-  <h2>Groups → taxa → functions</h2>
+  <div class="head">
+    <h2>Groups → taxa → functions</h2>
+    <ExportButtons {onexport} disabled={!result || result.nodes.length === 0} />
+  </div>
   <p class="desc">
     Click a group, taxon or function to highlight its paths. Drag nodes to rearrange. Functions follow the heatmap's search.
   </p>
@@ -269,6 +296,13 @@
     padding: 1rem;
     border: 1px solid var(--border);
     border-radius: 8px;
+  }
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
   }
   h2 {
     margin: 0;

@@ -2,7 +2,10 @@
   import { onMount } from 'svelte'
   import { taxaForFunction, type TaxaBars } from '../lib/aggregate'
   import { getSql } from '../lib/db'
-  import { chartTheme, echarts, MAX_SERIES } from '../lib/echarts'
+  import { chartTheme, initChart, MAX_SERIES, type echarts } from '../lib/echarts'
+  import { saveChart, type ChartFormat } from '../lib/chartExport'
+  import { download, safeFileName, toTsv } from '../lib/export'
+  import ExportButtons from './ExportButtons.svelte'
   import { view } from '../lib/view.svelte'
 
   let { dataVersion }: { dataVersion: number } = $props()
@@ -61,10 +64,10 @@
     return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
   }
 
-  function render() {
+  function render(forExport = false) {
     if (!chart || !result) return
     const r = result
-    const t = chartTheme(dark)
+    const t = chartTheme(dark && !forExport)
     const relative = view.barScale === 'relative'
     const totals = r.bars.map((_, b) => r.values.reduce((a, row) => a + row[b], 0) + r.other[b])
     const scaled = (v: number, b: number) => (relative ? (totals[b] > 0 ? (v / totals[b]) * 100 : 0) : v)
@@ -175,7 +178,7 @@
     dark = mq.matches
     const onScheme = () => (dark = mq.matches)
     mq.addEventListener('change', onScheme)
-    chart = echarts.init(el)
+    chart = initChart(el)
     const ro = new ResizeObserver(() => chart?.resize())
     ro.observe(el)
     return () => {
@@ -191,15 +194,35 @@
     render()
   })
 
+  async function onexport(format: ChartFormat | 'tsv') {
+    if (!result || !chart || !view.fn) return
+    const name = `taxa-${view.fn}-${view.barsBy}-${view.level}`
+    if (format === 'tsv') {
+      const r = result
+      const rows = r.taxa.map((t, i) => [t.label, t.path, ...r.values[i]])
+      if (r.otherTaxa > 0) rows.push([`Other (${r.otherTaxa} taxa)`, '', ...r.other])
+      download(toTsv(['taxon', 'lineage', ...r.bars.map((b) => b.label)], rows), `${safeFileName(`jarrvis-${name}`)}.tsv`)
+    } else {
+      await saveChart(chart, format, name, (forExport) => {
+        render(forExport)
+        // The on-screen legend is HTML, so draw it into the file.
+        return legend.map((l) => ({ name: l.name, color: l.color }))
+      })
+    }
+  }
+
   const width = $derived(
     result && view.barsBy === 'group' ? `min(100%, ${240 + result.bars.length * 110}px)` : '100%',
   )
 </script>
 
 <section class="bars" aria-busy={busy}>
-  <h2>
-    {#if view.fn}Taxa contributing to <span class="fn">{view.fn}</span>{:else}Taxa contributing to a function{/if}
-  </h2>
+  <div class="head">
+    <h2>
+      {#if view.fn}Taxa contributing to <span class="fn">{view.fn}</span>{:else}Taxa contributing to a function{/if}
+    </h2>
+    {#if view.fn}<ExportButtons {onexport} disabled={!result} />{/if}
+  </div>
 
   {#if !view.fn}
     <p class="desc">Click a function in the heatmap to see which taxa contribute to it.</p>
@@ -254,6 +277,13 @@
     padding: 1rem;
     border: 1px solid var(--border);
     border-radius: 8px;
+  }
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
   }
   h2 {
     margin: 0;

@@ -2,7 +2,10 @@
   import { onMount } from 'svelte'
   import { functionHeatmap, type HeatmapResult } from '../lib/aggregate'
   import { getSql } from '../lib/db'
-  import { chartTheme, echarts } from '../lib/echarts'
+  import { chartTheme, initChart, type echarts } from '../lib/echarts'
+  import { saveChart, type ChartFormat } from '../lib/chartExport'
+  import { download, safeFileName, toTsv } from '../lib/export'
+  import ExportButtons from './ExportButtons.svelte'
   import { view, type HeatScale } from '../lib/view.svelte'
 
   let { dataVersion }: { dataVersion: number } = $props()
@@ -66,10 +69,10 @@
     return { cv: r.values, min: 0, max, label: (x: number) => fmt.format(x), caption: 'Linear scale' }
   }
 
-  function render() {
+  function render(forExport = false) {
     if (!chart || !result || result.functions.length === 0) return
     const r = result
-    const t = chartTheme(dark)
+    const t = chartTheme(dark && !forExport)
     const { cv, min, max, label, caption } = colorValues(r, view.scale)
     const selected = view.fn
     const valueName = view.stat === 'mean' ? 'Mean per sample' : 'Total'
@@ -119,6 +122,7 @@
           axisLabel: {
             color: t.muted,
             fontSize: 11,
+            interval: 0,
             width: 220,
             overflow: 'truncate',
             formatter: (v: string) => (v === selected ? `{sel|${v}}` : v),
@@ -162,7 +166,7 @@
     dark = mq.matches
     const onScheme = () => (dark = mq.matches)
     mq.addEventListener('change', onScheme)
-    chart = echarts.init(el)
+    chart = initChart(el)
     chart.on('click', (p) => {
       const fn =
         p.componentType === 'yAxis'
@@ -189,13 +193,28 @@
     render()
   })
 
+  async function onexport(format: ChartFormat | 'tsv') {
+    if (!result || !chart) return
+    const name = `heatmap-${view.groupBy}-${view.stat}`
+    if (format === 'tsv') {
+      const r = result
+      const header = ['function', ...r.groups.map((g) => g.name)]
+      download(toTsv(header, r.functions.map((f, i) => [f, ...r.values[i]])), `${safeFileName(`jarrvis-${name}`)}.tsv`)
+    } else {
+      await saveChart(chart, format, name, (forExport) => render(forExport))
+    }
+  }
+
   const height = $derived(result ? Math.max(160, result.functions.length * ROW + 100) : 160)
   // Cap each group's column so a few groups don't stretch into long bars.
   const width = $derived(result ? `min(100%, ${300 + result.groups.length * 120}px)` : '100%')
 </script>
 
 <section class="heatmap" aria-busy={busy}>
-  <h2>Functions by group</h2>
+  <div class="head">
+    <h2>Functions by group</h2>
+    <ExportButtons {onexport} disabled={!result || result.functions.length === 0} />
+  </div>
   <p class="desc">Click a function to see which taxa contribute to it.</p>
 
   <div class="controls">
@@ -250,6 +269,13 @@
     padding: 1rem;
     border: 1px solid var(--border);
     border-radius: 8px;
+  }
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
   }
   h2 {
     margin: 0;

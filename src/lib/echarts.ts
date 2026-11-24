@@ -8,7 +8,7 @@ import {
   VisualMapComponent,
 } from 'echarts/components'
 import * as echarts from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
+import { SVGRenderer } from 'echarts/renderers'
 
 echarts.use([
   BarChart,
@@ -19,10 +19,16 @@ echarts.use([
   MarkAreaComponent,
   TooltipComponent,
   VisualMapComponent,
-  CanvasRenderer,
+  SVGRenderer,
 ])
 
 export { echarts }
+
+/**
+ * Start a chart in `el`. Charts render as SVG so an export is exactly what is on screen,
+ * including dragged Sankey nodes.
+ */
+export const initChart = (el: HTMLElement) => echarts.init(el, null, { renderer: 'svg' })
 
 /** Sequential blue ramp (steps 100, 250, 400, 550, 700), near-zero first. */
 const BLUE = ['#cde2fb', '#86b6ef', '#3987e5', '#1c5cab', '#0d366b']
@@ -35,16 +41,17 @@ const CATEGORICAL_LIGHT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4'
 const CATEGORICAL_DARK = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#0ca30c', '#9085e9', '#e66767']
 export const MAX_SERIES = CATEGORICAL_LIGHT.length
 
-/** Chart colors for the current color scheme, read from the page's CSS tokens. */
+/** Surface and text tokens, matching app.css. Fixed here so an export can use light colors on a dark page. */
+const TOKENS = {
+  light: { surface: '#ffffff', text: '#2b2a30', muted: '#6b6875', border: '#e5e4e7' },
+  dark: { surface: '#16151a', text: '#e6e4ea', muted: '#a19eab', border: '#2e2c34' },
+}
+
+/** Chart colors for a color scheme. Exports always use light. */
 export function chartTheme(dark: boolean) {
-  const css = getComputedStyle(document.documentElement)
-  const token = (name: string) => css.getPropertyValue(name).trim()
   return {
     dark,
-    surface: token('--bg'),
-    text: token('--text'),
-    muted: token('--muted'),
-    border: token('--border'),
+    ...TOKENS[dark ? 'dark' : 'light'],
     // Near-zero recedes toward the surface: light-to-dark on light, dark-to-light on dark.
     sequential: dark ? [...BLUE].reverse() : BLUE,
     categorical: dark ? CATEGORICAL_DARK : CATEGORICAL_LIGHT,

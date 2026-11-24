@@ -1,6 +1,8 @@
 <script lang="ts">
   import { getSql } from '../lib/db'
-  import { groupTable, LEVEL_LABELS, type GroupedResult, type Level } from '../lib/aggregate'
+  import { groupedRows, groupTable, LEVEL_LABELS, type GroupedResult, type Level } from '../lib/aggregate'
+  import { download, safeFileName, toTsv } from '../lib/export'
+  import ExportButtons from './ExportButtons.svelte'
   import { view } from '../lib/view.svelte'
 
   let { levels, dataVersion }: { levels: Level[]; dataVersion: number } = $props()
@@ -35,6 +37,14 @@
     })()
   })
 
+  async function onexport() {
+    const rows = await groupedRows(await getSql())
+    const level = view.level === 'taxon' ? 'taxon' : view.level
+    const header = ['group', level, 'lineage', 'function', view.stat === 'mean' ? 'mean_per_sample' : 'total']
+    const name = `table-${view.groupBy}-${view.level}-${view.stat}${view.fn ? `-${view.fn}` : ''}`
+    download(toTsv(header, rows.map((r) => [r.group, r.taxon, r.path, r.function, r.value])), `${safeFileName(`jarrvis-${name}`)}.tsv`)
+  }
+
   const valueLabel = $derived(view.stat === 'mean' ? 'Mean per sample' : 'Total')
 </script>
 
@@ -43,9 +53,12 @@
     <h2>
       {#if view.fn}Table: <span class="fn">{view.fn}</span> by group and taxon{:else}Table: contributions by group, taxon and function{/if}
     </h2>
-    {#if view.fn}
-      <button type="button" onclick={() => (view.fn = null)}>Show all functions</button>
-    {/if}
+    <div class="actions">
+      {#if view.fn}
+        <button type="button" onclick={() => (view.fn = null)}>Show all functions</button>
+      {/if}
+      <ExportButtons {onexport} formats={['tsv']} disabled={!result} />
+    </div>
   </div>
 
   {#if error}
@@ -113,6 +126,12 @@
   h2 {
     margin: 0;
     font-size: 1.1rem;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
   }
   .fn {
     font-family: var(--mono);

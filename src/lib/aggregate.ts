@@ -157,6 +157,12 @@ export async function groupTable(sql: Sql, { groupBy, level, stat, fn = null, li
   return { ...info, totalRows: Number(n), rows }
 }
 
+/** Every row of the last groupTable result (GROUPED), largest first, for export. */
+export async function groupedRows(sql: Sql): Promise<GroupedRow[]> {
+  return sql.query<GroupedRow>(`
+    SELECT "group", taxon, path, function, value FROM ${id(GROUPED)} ORDER BY value DESC, "group", taxon, function`)
+}
+
 export interface HeatmapOptions {
   groupBy: string
   stat: Stat
