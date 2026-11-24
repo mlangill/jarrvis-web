@@ -27,6 +27,8 @@ export interface ViewState {
   barsBy: 'group' | 'sample'
   /** Stacked bar: absolute values, or each bar as 100%. */
   barScale: 'absolute' | 'relative'
+  /** Table: add a column for each rank above the taxonomic level. */
+  tableRanks: boolean
   /** Sankey: how many functions (top by value, after the heatmap search). */
   sankeyFunctions: number
   /** Sankey: taxa shown individually before folding into Other. */
@@ -46,6 +48,7 @@ export const view: ViewState = $state({
   scale: 'log',
   barsBy: 'group',
   barScale: 'absolute',
+  tableRanks: false,
   sankeyFunctions: 10,
   sankeyTaxa: 8,
   highlight: null,

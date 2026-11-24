@@ -78,8 +78,17 @@ export type GroupedRow = {
   taxon: string
   /** Assigned ranks down to the level, e.g. "Firmicutes > Bacilli", for tooltips. Equal to taxon when level is 'taxon'. */
   path: string
+  /** Every rank from the top down to the level, '|'-separated by position, '' where unassigned. Equal to taxon when level is 'taxon'. */
+  ranks: string
   function: string
   value: number
+}
+
+/** The value at each rank above `level` for a row's `ranks`, null where unassigned. Empty for 'taxon'. */
+export function higherRanks(level: Level, ranks: string): { rank: Rank; value: string | null }[] {
+  if (level === 'taxon') return []
+  const values = ranks.split('|')
+  return RANKS.slice(0, RANKS.findIndex((r) => r.key === level)).map((r, i) => ({ rank: r.key, value: values[i] || null }))
 }
 
 export interface GroupedResult {
@@ -145,13 +154,13 @@ export async function groupTable(sql: Sql, { groupBy, level, stat, fn = null, li
         ${fn === null ? '' : `WHERE s.function = ${sqlString(fn)}`}
         GROUP BY gs.grp, tx.tkey, s.function
       )
-    SELECT a.grp AS "group", a.tlabel AS taxon, a.tpath AS path, a.function, ${value} AS value, n.samples
+    SELECT a.grp AS "group", a.tlabel AS taxon, a.tpath AS path, a.tkey AS ranks, a.function, ${value} AS value, n.samples
     FROM a JOIN n USING (grp)`)
 
   const info = await groupInfo(sql, groupBy)
   const [{ n }] = await sql.query(`SELECT count(*) AS n FROM ${id(GROUPED)}`)
   const rows = await sql.query<GroupedRow>(`
-    SELECT "group", taxon, path, function, value FROM ${id(GROUPED)}
+    SELECT "group", taxon, path, ranks, function, value FROM ${id(GROUPED)}
     ORDER BY value DESC, "group", taxon, function LIMIT ${Math.max(0, Math.floor(limit))}`)
 
   return { ...info, totalRows: Number(n), rows }
@@ -160,7 +169,7 @@ export async function groupTable(sql: Sql, { groupBy, level, stat, fn = null, li
 /** Every row of the last groupTable result (GROUPED), largest first, for export. */
 export async function groupedRows(sql: Sql): Promise<GroupedRow[]> {
   return sql.query<GroupedRow>(`
-    SELECT "group", taxon, path, function, value FROM ${id(GROUPED)} ORDER BY value DESC, "group", taxon, function`)
+    SELECT "group", taxon, path, ranks, function, value FROM ${id(GROUPED)} ORDER BY value DESC, "group", taxon, function`)
 }
 
 /**

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createNodeSql } from '../test/nodeSql'
-import { buildTaxonomy, functionHeatmap, groupDifference, groupTable, sankeyData, taxaForFunction, TAXONOMY } from './aggregate'
+import { buildTaxonomy, functionHeatmap, groupDifference, groupTable, higherRanks, sankeyData, taxaForFunction, TAXONOMY } from './aggregate'
 import { loadTable } from './load'
 import type { Sql } from './sql'
 import { META_RAW, STRAT_RAW, validateMetadata, validateStratified } from './validate'
@@ -77,16 +77,16 @@ describe('groupTable', () => {
     expect(r.groups).toEqual([{ name: 'A', samples: 2 }, { name: 'B', samples: 1 }])
     expect(r.ungroupedSamples).toBe(1)
     expect(r.rows).toEqual([
-      { group: 'B', taxon: 'X', path: 'Firmicutes > Bacilli > Lactobacillales > Streptococcaceae > Streptococcus > X', function: 'EC:1', value: 3 },
-      { group: 'A', taxon: 'X', path: expect.any(String), function: 'EC:1', value: 2 },
-      { group: 'A', taxon: 'Y', path: expect.any(String), function: 'EC:2', value: 0.5 },
+      { group: 'B', taxon: 'X', path: 'Firmicutes > Bacilli > Lactobacillales > Streptococcaceae > Streptococcus > X', ranks: '|Firmicutes|Bacilli|Lactobacillales|Streptococcaceae|Streptococcus|X', function: 'EC:1', value: 3 },
+      { group: 'A', taxon: 'X', path: expect.any(String), ranks: expect.any(String), function: 'EC:1', value: 2 },
+      { group: 'A', taxon: 'Y', path: expect.any(String), ranks: expect.any(String), function: 'EC:2', value: 0.5 },
     ])
   })
 
   it('collapses species into their genus and sums them', async () => {
     await setup(tsv(HEADER, ['S1', `${STREP};s__X`, 'EC:1', '4'], ['S1', `${STREP};s__Y`, 'EC:1', '2']), META)
     const r = await groupTable(sql, { groupBy: 'type', level: 'genus', stat: 'sum' })
-    expect(r.rows).toEqual([{ group: 'A', taxon: 'Streptococcus', path: expect.any(String), function: 'EC:1', value: 6 }])
+    expect(r.rows).toEqual([{ group: 'A', taxon: 'Streptococcus', path: expect.any(String), ranks: expect.any(String), function: 'EC:1', value: 6 }])
   })
 
   it('labels unassigned ranks after the nearest known parent', async () => {
@@ -194,6 +194,24 @@ describe('functionHeatmap', () => {
     const byGroup = (name: string) => g.rows.filter((r) => r.group === name).reduce((a, r) => a + r.value, 0)
     expect(byGroup('A')).toBeCloseTo(h.values[0][0], 6)
     expect(byGroup('B')).toBeCloseTo(h.values[0][1], 6)
+  })
+})
+
+describe('higherRanks', () => {
+  it('keeps rank positions when middle ranks are unassigned', async () => {
+    await setup(
+      tsv(HEADER, ['S1', 'p__Firmicutes;c__NA;o__Lactobacillales;f__Streptococcaceae;g__Streptococcus', 'EC:1', '1']),
+      tsv(['sample_id', 'type'], ['S1', 'A']),
+    )
+    const r = await groupTable(sql, { groupBy: 'type', level: 'genus', stat: 'sum' })
+    expect(higherRanks('genus', r.rows[0].ranks)).toEqual([
+      { rank: 'kingdom', value: null },
+      { rank: 'phylum', value: 'Firmicutes' },
+      { rank: 'class', value: null },
+      { rank: 'order', value: 'Lactobacillales' },
+      { rank: 'family', value: 'Streptococcaceae' },
+    ])
+    expect(higherRanks('taxon', 'anything')).toEqual([])
   })
 })
 

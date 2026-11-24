@@ -57,6 +57,8 @@ export function chartTheme(dark: boolean) {
     categorical: dark ? CATEGORICAL_DARK : CATEGORICAL_LIGHT,
     /** Diverging poles (blue ↔ red) for signed differences. */
     diverging: dark ? { neg: CATEGORICAL_DARK[0], pos: CATEGORICAL_DARK[7] } : { neg: CATEGORICAL_LIGHT[0], pos: CATEGORICAL_LIGHT[7] },
+    /** Neutral for series past the 8 categorical slots that stay individually labelled (e.g. Sankey taxa 9+). */
+    extra: dark ? '#77757f' : '#9c9aa6',
     /** Neutral for "Other", outside the categorical set. */
     other: dark ? '#52514e' : '#c3c2b7',
   }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getSql } from '../lib/db'
-  import { groupedRows, groupTable, LEVEL_LABELS, type GroupedResult, type Level } from '../lib/aggregate'
+  import { groupedRows, groupTable, higherRanks, LEVEL_LABELS, RANKS, type GroupedResult, type Level } from '../lib/aggregate'
   import { download, safeFileName, toTsv } from '../lib/export'
   import ExportButtons from './ExportButtons.svelte'
   import { view } from '../lib/view.svelte'
@@ -39,13 +39,27 @@
 
   async function onexport() {
     const rows = await groupedRows(await getSql())
-    const level = view.level === 'taxon' ? 'taxon' : view.level
-    const header = ['group', level, 'lineage', 'function', view.stat === 'mean' ? 'mean_per_sample' : 'total']
+    const level = view.level
+    // The export always has a column per higher rank, whether or not the table shows them.
+    const above = shownRanks(true)
+    const header = ['group', ...above, level, 'lineage', 'function', view.stat === 'mean' ? 'mean_per_sample' : 'total']
     const name = `table-${view.groupBy}-${view.level}-${view.stat}${view.fn ? `-${view.fn}` : ''}`
-    download(toTsv(header, rows.map((r) => [r.group, r.taxon, r.path, r.function, r.value])), `${safeFileName(`jarrvis-${name}`)}.tsv`)
+    const body = rows.map((r) => {
+      const hr = new Map(higherRanks(level, r.ranks).map((h) => [h.rank, h.value ?? '']))
+      return [r.group, ...above.map((k) => hr.get(k) ?? ''), r.taxon, r.path, r.function, r.value]
+    })
+    download(toTsv(header, body), `${safeFileName(`jarrvis-${name}`)}.tsv`)
+  }
+
+  /** Ranks above the current level that the data has, highest first (none for 'taxon' or when off). */
+  function shownRanks(on: boolean) {
+    if (!on || view.level === 'taxon') return []
+    const upTo = RANKS.findIndex((r) => r.key === view.level)
+    return RANKS.slice(0, upTo).map((r) => r.key).filter((k) => levels.includes(k))
   }
 
   const valueLabel = $derived(view.stat === 'mean' ? 'Mean per sample' : 'Total')
+  const rankCols = $derived(shownRanks(view.tableRanks))
 </script>
 
 <section class="grouped" aria-busy={busy}>
@@ -54,6 +68,12 @@
       {#if view.fn}Table: <span class="fn">{view.fn}</span> by group and taxon{:else}Table: contributions by group, taxon and function{/if}
     </h2>
     <div class="actions">
+      {#if view.level !== 'taxon'}
+        <label class="check">
+          <input type="checkbox" bind:checked={view.tableRanks} />
+          Show higher ranks
+        </label>
+      {/if}
       {#if view.fn}
         <button type="button" onclick={() => (view.fn = null)}>Show all functions</button>
       {/if}
@@ -88,6 +108,7 @@
         <thead>
           <tr>
             <th>Group</th>
+            {#each rankCols as k}<th class="rank">{LEVEL_LABELS[k]}</th>{/each}
             <th>{LEVEL_LABELS[view.level]}</th>
             <th>Function</th>
             <th class="num">{valueLabel}</th>
@@ -97,7 +118,14 @@
           {#each result.rows as row}
             <tr>
               <td>{row.group}</td>
-              <td title={row.path}>{row.taxon}</td>
+              {#if rankCols.length > 0}
+                {@const hr = new Map(higherRanks(view.level, row.ranks).map((h) => [h.rank, h.value]))}
+                {#each rankCols as k}
+                  {@const v = hr.get(k)}
+                  <td class="rank" class:unassigned={!v}>{v ?? '—'}</td>
+                {/each}
+              {/if}
+              <td class="taxon" title={row.path}>{row.taxon}</td>
               <td>{row.function}</td>
               <td class="num">{fmt.format(row.value)}</td>
             </tr>
@@ -194,8 +222,22 @@
     background: var(--bg);
     white-space: nowrap;
   }
-  td:nth-child(2) {
+  td.taxon {
     cursor: help;
+  }
+  /* Higher ranks are context for the taxon column, so they recede. */
+  .rank {
+    color: var(--muted);
+  }
+  .unassigned {
+    opacity: 0.6;
+  }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    cursor: pointer;
   }
   .num {
     text-align: right;

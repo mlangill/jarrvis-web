@@ -12,7 +12,7 @@
 
   const fmt = new Intl.NumberFormat(undefined, { maximumSignificantDigits: 4 })
   const FUNCTION_COUNTS = [5, 10, 15, 20]
-  const TAXA_COUNTS = [4, 6, 8]
+  const TAXA_COUNTS = [4, 6, 8, 12, 16, 20, 30]
 
   let result = $state<SankeyData | null>(null)
   let error = $state<string | null>(null)
@@ -30,7 +30,7 @@
       search: view.search,
       rank: view.rank,
       n: view.sankeyFunctions,
-      topTaxa: Math.min(view.sankeyTaxa, MAX_SERIES),
+      topTaxa: view.sankeyTaxa,
       fn: view.fn,
     }
     void dataVersion
@@ -101,7 +101,8 @@
     const byId = new Map(r.nodes.map((n) => [n.id, n]))
     const taxonColor = (id: string) => {
       const slot = byId.get(id)?.colorSlot ?? -1
-      return slot >= 0 ? t.categorical[slot] : t.other
+      // The first 8 taxa get categorical colours; any more stay labelled but neutral.
+      return slot < 0 ? t.other : slot < MAX_SERIES ? t.categorical[slot] : t.extra
     }
     const highlighted = focus && byId.has(focus) ? focus : null
     const links = drawnLinks(r, highlighted)
@@ -137,7 +138,8 @@
             top: 8,
             bottom: 8,
             nodeWidth: 14,
-            nodeGap: 10,
+            // Small taxa are near-zero-height nodes, so the gap is what keeps their labels apart.
+            nodeGap: 16,
             nodeAlign: 'justify',
             layoutIterations: 0,
             draggable: true,
@@ -277,7 +279,7 @@
     <p class="note">No functions to show{view.search ? ` for "${view.search}"` : ''}.</p>
   {:else if result}
     <p class="note">
-      Functions with {view.rank === 'difference' ? 'the largest difference between groups' : 'the highest values'}. {view.stat === 'mean' ? 'Mean per sample in each group' : 'Total per group'}; link widths are contributions.{#if result.otherTaxa > 0}{' '}{result.otherTaxa} smaller taxa are combined as Other.{/if}
+      Functions with {view.rank === 'difference' ? 'the largest difference between groups' : 'the highest values'}. {view.stat === 'mean' ? 'Mean per sample in each group' : 'Total per group'}; link widths are contributions.{#if result.otherTaxa > 0}{' '}{result.otherTaxa} smaller taxa are combined as Other.{/if}{#if view.sankeyTaxa > MAX_SERIES}{' '}Taxa past the top {MAX_SERIES} are grey.{/if}
     </p>
   {/if}
 
