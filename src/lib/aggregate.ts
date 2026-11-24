@@ -314,3 +314,144 @@ export async function taxaForFunction(
     otherTaxa: ranked.length - shown.length,
   }
 }
+
+export type SankeyColumn = 'group' | 'taxon' | 'function'
+
+export interface SankeyNode {
+  /** Unique across columns: 'g:', 't:' or 'f:' followed by the group name, taxon key or function. */
+  id: string
+  label: string
+  column: SankeyColumn
+  /** Longer description for tooltips (the rank path for taxa). */
+  title: string
+  /** For taxa: index into the categorical palette, or -1 for Other. */
+  colorSlot?: number
+}
+
+export interface SankeyLink {
+  source: string
+  target: string
+  value: number
+}
+
+export interface SankeyFlow {
+  group: string
+  taxon: string
+  fn: string
+  value: number
+}
+
+export interface SankeyData {
+  nodes: SankeyNode[]
+  links: SankeyLink[]
+  /** The full group → taxon → function breakdown behind the links (node ids), so a highlight can
+   * show just one group's or one function's share of each link. */
+  flows: SankeyFlow[]
+  /** Taxa folded into the Other node. */
+  otherTaxa: number
+}
+
+export interface SankeyOptions {
+  groupBy: string
+  level: Level
+  stat: Stat
+  /** Functions to include, in display order. */
+  functions: string[]
+  /** Taxa shown individually; the rest become one Other node. */
+  topTaxa?: number
+}
+
+export const OTHER_TAXA_ID = 't:\u0000other'
+
+/**
+ * Three-column flow: groups → taxa → functions, for the given functions. Values are per group
+ * (mean or total, per `stat`). A group→taxon link carries that taxon's value summed over the
+ * functions; a taxon→function link carries its value summed over the groups, so flow into each
+ * taxon equals flow out of it.
+ */
+export async function sankeyData(
+  sql: Sql,
+  { groupBy, level, stat, functions, topTaxa = 8 }: SankeyOptions,
+): Promise<SankeyData> {
+  if (functions.length === 0) return { nodes: [], links: [], flows: [], otherTaxa: 0 }
+  const tx = taxonExprs(level)
+  const rows = await sql.query<{ grp: string; tkey: string; tlabel: string; tpath: string; function: string; value: number }>(`
+    WITH
+      tx AS (SELECT taxon, ${tx.key} AS tkey, ${tx.label} AS tlabel, ${tx.path} AS tpath FROM ${id(TAXONOMY)}),
+      ${groupCtes(groupBy)},
+      c AS (
+        SELECT gs.grp, tx.tkey, any_value(tx.tlabel) AS tlabel, any_value(tx.tpath) AS tpath, s.function,
+               sum(s.contribution) AS total
+        FROM ${id(STRAT)} s JOIN gs ON s.sample = gs.sample_id JOIN tx USING (taxon)
+        WHERE s.function IN (${functions.map(sqlString).join(', ')})
+        GROUP BY gs.grp, tx.tkey, s.function
+      )
+    SELECT c.grp, c.tkey, c.tlabel, c.tpath, c.function, ${stat === 'mean' ? 'c.total / n.samples' : 'c.total'} AS value
+    FROM c JOIN n USING (grp)
+    WHERE c.total > 0`)
+
+  // Rank taxa by their total flow and keep the top N.
+  const taxonTotals = new Map<string, { label: string; path: string; total: number }>()
+  for (const r of rows) {
+    const t = taxonTotals.get(r.tkey) ?? { label: r.tlabel, path: r.tpath, total: 0 }
+    t.total += Number(r.value)
+    taxonTotals.set(r.tkey, t)
+  }
+  const ranked = [...taxonTotals.entries()].sort((a, b) => b[1].total - a[1].total || (a[0] < b[0] ? -1 : 1))
+  const shown = ranked.slice(0, topTaxa)
+  const shownIds = new Map(shown.map(([key], i) => [key, i]))
+  const taxonId = (key: string) => (shownIds.has(key) ? `t:${key}` : OTHER_TAXA_ID)
+
+  const linkMap = new Map<string, SankeyLink>()
+  const add = (source: string, target: string, value: number) => {
+    const k = `${source}\u0001${target}`
+    const l = linkMap.get(k)
+    if (l) l.value += value
+    else linkMap.set(k, { source, target, value })
+  }
+  const groupsUsed = new Set<string>()
+  const functionsUsed = new Set<string>()
+  const flowMap = new Map<string, SankeyFlow>()
+  for (const r of rows) {
+    const v = Number(r.value)
+    const [g, t, f] = [`g:${r.grp}`, taxonId(r.tkey), `f:${r.function}`]
+    add(g, t, v)
+    add(t, f, v)
+    const k = `${g}\u0001${t}\u0001${f}`
+    const flow = flowMap.get(k)
+    if (flow) flow.value += v
+    else flowMap.set(k, { group: g, taxon: t, fn: f, value: v })
+    groupsUsed.add(r.grp)
+    functionsUsed.add(r.function)
+  }
+
+  const { groups } = await groupInfo(sql, groupBy)
+  const nodes: SankeyNode[] = [
+    ...groups
+      .filter((g) => groupsUsed.has(g.name))
+      .map((g) => ({
+        id: `g:${g.name}`,
+        label: g.name,
+        column: 'group' as const,
+        title: `${g.name} (${g.samples} ${g.samples === 1 ? 'sample' : 'samples'})`,
+      })),
+    ...shown.map(([key, t], i) => ({ id: `t:${key}`, label: t.label, column: 'taxon' as const, title: t.path, colorSlot: i })),
+  ]
+  const otherTaxa = ranked.length - shown.length
+  if (otherTaxa > 0) {
+    nodes.push({
+      id: OTHER_TAXA_ID,
+      label: `Other (${otherTaxa} ${otherTaxa === 1 ? 'taxon' : 'taxa'})`,
+      column: 'taxon',
+      title: 'All other taxa combined',
+      colorSlot: -1,
+    })
+  }
+  nodes.push(
+    ...functions
+      .filter((f) => functionsUsed.has(f))
+      .map((f) => ({ id: `f:${f}`, label: f, column: 'function' as const, title: f })),
+  )
+
+  return { nodes, links: [...linkMap.values()], flows: [...flowMap.values()], otherTaxa }
+}

@@ -25,6 +25,12 @@ export interface ViewState {
   barsBy: 'group' | 'sample'
   /** Stacked bar: absolute values, or each bar as 100%. */
   barScale: 'absolute' | 'relative'
+  /** Sankey: how many functions (top by value, after the heatmap search). */
+  sankeyFunctions: number
+  /** Sankey: taxa shown individually before folding into Other. */
+  sankeyTaxa: number
+  /** Sankey: highlighted group or taxon node id ('g:…' or 't:…'); functions use `fn`. */
+  highlight: string | null
 }
 
 export const view: ViewState = $state({
@@ -37,4 +43,7 @@ export const view: ViewState = $state({
   scale: 'log',
   barsBy: 'group',
   barScale: 'absolute',
+  sankeyFunctions: 10,
+  sankeyTaxa: 8,
+  highlight: null,
 })

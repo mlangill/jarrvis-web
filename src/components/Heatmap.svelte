@@ -168,7 +168,10 @@
         p.componentType === 'yAxis'
           ? String((p as unknown as { value: string }).value)
           : result?.functions[(p.value as number[])[1]]
-      if (fn) view.fn = view.fn === fn ? null : fn
+      if (fn) {
+        view.highlight = null
+        view.fn = view.fn === fn ? null : fn
+      }
     })
     const ro = new ResizeObserver(() => chart?.resize())
     ro.observe(el)

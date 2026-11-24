@@ -1,5 +1,5 @@
 // ECharts with only the pieces the app uses, to keep the bundle small.
-import { BarChart, HeatmapChart } from 'echarts/charts'
+import { BarChart, HeatmapChart, SankeyChart } from 'echarts/charts'
 import {
   GridComponent,
   LegendComponent,
@@ -13,6 +13,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 echarts.use([
   BarChart,
   HeatmapChart,
+  SankeyChart,
   GridComponent,
   LegendComponent,
   MarkAreaComponent,

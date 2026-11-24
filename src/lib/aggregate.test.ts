@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createNodeSql } from '../test/nodeSql'
-import { buildTaxonomy, functionHeatmap, groupTable, taxaForFunction, TAXONOMY } from './aggregate'
+import { buildTaxonomy, functionHeatmap, groupTable, sankeyData, taxaForFunction, TAXONOMY } from './aggregate'
 import { loadTable } from './load'
 import type { Sql } from './sql'
 import { META_RAW, STRAT_RAW, validateMetadata, validateStratified } from './validate'
@@ -228,6 +228,73 @@ describe('taxaForFunction', () => {
     r.bars.forEach((_, b) => {
       const total = r.values.reduce((a, row) => a + row[b], 0) + r.other[b]
       expect(total).toBeCloseTo(h.values[0][b], 6)
+    })
+  })
+})
+
+describe('sankeyData', () => {
+  const META = tsv(['sample_id', 'type'], ['S1', 'A'], ['S2', 'A'], ['S3', 'B'])
+  const HEADER = ['sample', 'taxon', 'function', 'contribution']
+  const rows = tsv(HEADER,
+    ['S1', 'g__X', 'EC:1', '4'], ['S2', 'g__X', 'EC:2', '2'], ['S1', 'g__Y', 'EC:1', '1'],
+    ['S3', 'g__Z', 'EC:1', '3'], ['S3', 'g__X', 'EC:2', '1'], ['S3', 'g__W', 'EC:3', '9'],
+  )
+  const sum = (ls: { value: number }[]) => ls.reduce((a, l) => a + l.value, 0)
+
+  it('builds group → taxon → function flows that balance at each taxon', async () => {
+    await setup(rows, META)
+    const r = await sankeyData(sql, { groupBy: 'type', level: 'genus', stat: 'mean', functions: ['EC:1', 'EC:2'] })
+    expect(r.nodes.map((n) => n.id)).toEqual(['g:A', 'g:B', 't:|||||X', 't:|||||Z', 't:|||||Y', 'f:EC:1', 'f:EC:2'])
+    // A has 2 samples: X = (4 + 2) / 2 = 3, Y = 0.5. B has 1: Z = 3, X = 1.
+    const link = (s: string, t: string) => r.links.find((l) => l.source === s && l.target === t)?.value
+    expect(link('g:A', 't:|||||X')).toBe(3)
+    expect(link('g:B', 't:|||||X')).toBe(1)
+    expect(link('t:|||||X', 'f:EC:1')).toBe(2)
+    expect(link('t:|||||X', 'f:EC:2')).toBe(2)
+    for (const n of r.nodes.filter((x) => x.column === 'taxon')) {
+      expect(sum(r.links.filter((l) => l.target === n.id))).toBeCloseTo(sum(r.links.filter((l) => l.source === n.id)))
+    }
+    expect(r.links.some((l) => l.target === 'f:EC:3' || l.source === 't:|||||W')).toBe(false)
+  })
+
+  it('keeps flows that add up to every link', async () => {
+    await setup(rows, META)
+    const r = await sankeyData(sql, { groupBy: 'type', level: 'genus', stat: 'mean', functions: ['EC:1', 'EC:2'], topTaxa: 1 })
+    for (const l of r.links) {
+      const parts = r.flows.filter((f) =>
+        l.source.startsWith('g:') ? f.group === l.source && f.taxon === l.target : f.taxon === l.source && f.fn === l.target,
+      )
+      expect(sum(parts)).toBeCloseTo(l.value)
+    }
+    expect(r.flows).toContainEqual({ group: 'g:B', taxon: 't:\u0000other', fn: 'f:EC:1', value: 3 })
+  })
+
+  it('folds taxa past the top N into one Other node', async () => {
+    await setup(rows, META)
+    const r = await sankeyData(sql, { groupBy: 'type', level: 'genus', stat: 'sum', functions: ['EC:1', 'EC:2'], topTaxa: 1 })
+    expect(r.nodes.filter((n) => n.column === 'taxon').map((n) => n.label)).toEqual(['X', 'Other (2 taxa)'])
+    expect(r.otherTaxa).toBe(2)
+    expect(sum(r.links.filter((l) => l.source.startsWith('g:')))).toBe(11)
+    expect(sum(r.links.filter((l) => l.target.startsWith('f:')))).toBe(11)
+  })
+
+  it('keeps node ids distinct when names repeat across columns', async () => {
+    await setup(tsv(HEADER, ['S1', 'A', 'A', '1']), META)
+    const r = await sankeyData(sql, { groupBy: 'type', level: 'taxon', stat: 'sum', functions: ['A'] })
+    expect(r.nodes.map((n) => n.id)).toEqual(['g:A', 't:A', 'f:A'])
+  })
+
+  it('returns nothing for no functions', async () => {
+    expect(await sankeyData(sql, { groupBy: 'type', level: 'genus', stat: 'sum', functions: [] })).toEqual({ nodes: [], links: [], flows: [], otherTaxa: 0 })
+  })
+
+  it('carries the heatmap totals through on the TSD subset', async () => {
+    await setup(testFile('jarrvis/TSD-EC-stratified-subset.tsv'), testFile('jarrvis/TSD-sample-metadata.txt'))
+    const h = await functionHeatmap(sql, { groupBy: 'type', stat: 'mean', top: 3 })
+    const r = await sankeyData(sql, { groupBy: 'type', level: 'genus', stat: 'mean', functions: h.functions })
+    h.functions.forEach((f, i) => {
+      const into = sum(r.links.filter((l) => l.target === `f:${f}`))
+      expect(into).toBeCloseTo(h.values[i].reduce((a, v) => a + v, 0), 6)
     })
   })
 })
