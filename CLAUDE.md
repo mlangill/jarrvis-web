@@ -45,6 +45,7 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which checks, builds and 
 - `src/App.svelte` / `src/components/InputPanel.svelte`: one panel per input file. Loading a file reruns that file's validation and then `crossCheck`. The "Try the example data" button fetches `public/demo/` (the full TSD table, gzipped, plus its metadata, both built by `scripts/fetch-test-data.sh`) only when clicked, and feeds the files through the same path as the file picker.
 - `src/lib/db.ts`: the one shared DuckDB instance (`getDb()`) and the browser `Sql` (`getSql()`). Browser `File`s are registered with `BROWSER_FILEREADER`, so large files are read lazily instead of copied into memory. The wasm and worker bundles are imported with `?url`, so Vite serves them from this site rather than a CDN. Don't switch to the jsDelivr bundles.
 - `vite.config.ts`: `base: './'` keeps asset paths relative, so the build works under the Pages subpath `/jarrvis-web/`. `@duckdb/duckdb-wasm` is excluded from `optimizeDeps`.
+- About page: `docs/design.html` is the design document, written as page content only (no doctype or head) so it can also be published on its own. The `aboutPage` plugin in `vite.config.ts` wraps it into `about.html` (served in dev, emitted in the build) with a link back to the app. The app header links to it in a new tab so loaded files aren't lost. Keep it accurate when behaviour changes.
 
 ## Hard constraints
 

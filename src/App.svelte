@@ -185,7 +185,11 @@
 
 <main>
   <header>
-    <h1>JarrVis</h1>
+    <div class="title">
+      <h1>JarrVis</h1>
+      <!-- A new tab, so following it never loses the files loaded here. -->
+      <a href="./about.html" target="_blank" rel="noopener">About and how it works</a>
+    </div>
     <p>Stratified microbiome function explorer. Runs entirely in your browser; your files never leave your computer.</p>
   </header>
 
@@ -274,6 +278,17 @@
     max-width: 1200px;
     margin: 0 auto;
     padding: 2rem 16px;
+  }
+  .title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.25rem 1rem;
+  }
+  .title a {
+    font-size: 0.95rem;
+    color: var(--accent);
   }
   header p {
     margin-top: 0;
