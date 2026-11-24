@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createNodeSql } from '../test/nodeSql'
-import { buildTaxonomy, functionHeatmap, groupTable, sankeyData, taxaForFunction, TAXONOMY } from './aggregate'
+import { buildTaxonomy, functionHeatmap, groupDifference, groupTable, sankeyData, taxaForFunction, TAXONOMY } from './aggregate'
 import { loadTable } from './load'
 import type { Sql } from './sql'
 import { META_RAW, STRAT_RAW, validateMetadata, validateStratified } from './validate'
@@ -194,6 +194,25 @@ describe('functionHeatmap', () => {
     const byGroup = (name: string) => g.rows.filter((r) => r.group === name).reduce((a, r) => a + r.value, 0)
     expect(byGroup('A')).toBeCloseTo(h.values[0][0], 6)
     expect(byGroup('B')).toBeCloseTo(h.values[0][1], 6)
+  })
+})
+
+describe('groupDifference', () => {
+  const g = (...names: string[]) => names.map((name) => ({ name, samples: 1 }))
+
+  it('is signed, second minus first, with two groups', () => {
+    expect(groupDifference(g('A', 'B'), [[5, 0], [1, 3]])).toEqual({
+      label: 'B − A',
+      signed: true,
+      values: [-5, 2],
+      extremes: [{ high: 0, low: 1 }, { high: 1, low: 0 }],
+    })
+  })
+
+  it('is highest minus lowest with more groups, and null with one', () => {
+    const d = groupDifference(g('A', 'B', 'C'), [[2, 7, 1]])
+    expect(d).toMatchObject({ label: 'Highest − lowest', signed: false, values: [6], extremes: [{ high: 1, low: 2 }] })
+    expect(groupDifference(g('A'), [[1]])).toBeNull()
   })
 })
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { functionHeatmap, type HeatmapResult } from '../lib/aggregate'
+  import { functionHeatmap, groupDifference, type HeatmapResult } from '../lib/aggregate'
   import { getSql } from '../lib/db'
   import { chartTheme, initChart, type echarts } from '../lib/echarts'
   import { saveChart, type ChartFormat } from '../lib/chartExport'
@@ -13,6 +13,10 @@
   const fmt = new Intl.NumberFormat(undefined, { maximumSignificantDigits: 4 })
   const TOPS = [25, 50, 100, 200]
   const ROW = 22
+  /** Width of the difference column, in px. */
+  const DIFF_W = 120
+  /** Function labels longer than this are truncated. */
+  const LABEL_MAX = 220
 
   let result = $state<HeatmapResult | null>(null)
   let error = $state<string | null>(null)
@@ -69,6 +73,8 @@
     const { cv, min, max, label, caption } = colorValues(r, view.scale)
     const selected = view.fn
     const valueName = view.stat === 'mean' ? 'Mean per sample' : 'Total'
+    const diff = groupDifference(r.groups, r.values)
+    const sampleCount = (n: number) => `${n} ${n === 1 ? 'sample' : 'samples'}`
 
     const data = r.functions.flatMap((f, fi) =>
       r.groups.map((_, gi) => {
@@ -78,53 +84,117 @@
       }),
     )
 
+    // The difference column: a bar per function, sharing the heatmap's rows.
+    const reach = diff ? Math.max(1e-9, ...diff.values.map(Math.abs)) : 1
+    const diffBars = diff?.values.map((d, fi) => ({
+      value: d,
+      itemStyle: {
+        color: diff.signed ? (d >= 0 ? t.diverging.pos : t.diverging.neg) : t.sequential[2],
+        borderRadius: d >= 0 ? [0, 3, 3, 0] : [3, 0, 0, 3],
+        ...(r.functions[fi] === selected ? { borderColor: t.text, borderWidth: 1.5 } : {}),
+      },
+    }))
+    const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumSignificantDigits: 2 })
+
     chart.setOption(
       {
         animation: false,
         backgroundColor: 'transparent',
         textStyle: { fontFamily: 'system-ui, sans-serif', color: t.text },
-        grid: { top: 36, right: 16, bottom: 56, left: 8, containLabel: true },
+        // Fixed pixel grids (no containLabel), so the heatmap rows and the difference bars line up.
+        grid: [
+          { top: 36, right: diff ? DIFF_W + 40 : 16, bottom: 56, left: labelWidth(r.functions) + 16 },
+          ...(diff ? [{ top: 36, right: 24, bottom: 56, width: DIFF_W }] : []),
+        ],
         tooltip: {
           backgroundColor: t.surface,
           borderColor: t.border,
           textStyle: { color: t.text, fontSize: 12 },
-          formatter: (p: { value: [number, number, number, number] }) => {
-            const [gi, fi, , raw] = p.value
+          formatter: (p: { seriesIndex: number; dataIndex: number; value: number | [number, number, number, number] }) => {
+            if (p.seriesIndex === 1 && diff) {
+              const fi = p.dataIndex
+              const { high, low } = diff.extremes[fi]
+              const d = diff.values[fi]
+              const where =
+                d === 0
+                  ? 'No difference'
+                  : diff.signed
+                    ? `Higher in ${escape(r.groups[d > 0 ? 1 : 0].name)}`
+                    : `Highest in ${escape(r.groups[high].name)}, lowest in ${escape(r.groups[low].name)}`
+              return `<strong>${escape(r.functions[fi])}</strong><br>${escape(diff.label)} (${valueName.toLowerCase()}): <strong>${fmt.format(d)}</strong><br>${where}`
+            }
+            const [gi, fi, , raw] = p.value as [number, number, number, number]
             const g = r.groups[gi]
-            return `<strong>${escape(r.functions[fi])}</strong><br>${escape(g.name)} (${g.samples} ${
-              g.samples === 1 ? 'sample' : 'samples'
-            })<br>${valueName}: <strong>${fmt.format(raw)}</strong><br>${
-              view.rank === 'difference' ? 'Highest − lowest group' : 'Sum across groups'
-            }: ${fmt.format(r.scores[fi])}`
+            return `<strong>${escape(r.functions[fi])}</strong><br>${escape(g.name)} (${sampleCount(g.samples)})<br>${valueName}: <strong>${fmt.format(raw)}</strong>`
           },
         },
-        xAxis: {
-          type: 'category',
-          position: 'top',
-          data: r.groups.map((g) => g.name),
-          axisLine: { show: false },
-          axisTick: { show: false },
-          axisLabel: { color: t.text, fontSize: 12, interval: 0 },
-          splitArea: { show: false },
-        },
-        yAxis: {
-          type: 'category',
-          inverse: true,
-          data: r.functions,
-          axisLine: { show: false },
-          axisTick: { show: false },
-          triggerEvent: true,
-          axisLabel: {
-            color: t.muted,
-            fontSize: 11,
-            interval: 0,
-            width: 220,
-            overflow: 'truncate',
-            formatter: (v: string) => (v === selected ? `{sel|${v}}` : v),
-            rich: { sel: { color: t.text, fontWeight: 'bold', fontSize: 11 } },
+        xAxis: [
+          {
+            type: 'category',
+            position: 'top',
+            data: r.groups.map((g) => g.name),
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: { color: t.text, fontSize: 12, interval: 0 },
+            splitArea: { show: false },
           },
-        },
+          ...(diff
+            ? [
+                {
+                  type: 'value',
+                  gridIndex: 1,
+                  position: 'top',
+                  min: diff.signed ? -reach : 0,
+                  max: reach,
+                  name: diff.label,
+                  nameLocation: 'middle',
+                  nameGap: 24,
+                  nameTextStyle: { color: t.text, fontSize: 12 },
+                  axisLine: { show: false },
+                  axisTick: { show: false },
+                  // Ticks only at the ends and zero.
+                  interval: reach,
+                  splitLine: { lineStyle: { color: t.border } },
+                  axisLabel: { color: t.muted, fontSize: 10, formatter: (v: number) => compact.format(v) },
+                },
+              ]
+            : []),
+        ],
+        yAxis: [
+          {
+            type: 'category',
+            inverse: true,
+            data: r.functions,
+            axisLine: { show: false },
+            axisTick: { show: false },
+            triggerEvent: true,
+            axisLabel: {
+              color: t.muted,
+              fontSize: 11,
+              interval: 0,
+              width: LABEL_MAX,
+              overflow: 'truncate',
+              formatter: (v: string) => (v === selected ? `{sel|${v}}` : v),
+              rich: { sel: { color: t.text, fontWeight: 'bold', fontSize: 11 } },
+            },
+          },
+          ...(diff
+            ? [
+                {
+                  type: 'category',
+                  gridIndex: 1,
+                  inverse: true,
+                  data: r.functions,
+                  axisLabel: { show: false },
+                  axisTick: { show: false },
+                  // The zero line.
+                  axisLine: { show: true, onZero: true, lineStyle: { color: t.muted } },
+                },
+              ]
+            : []),
+        ],
         visualMap: {
+          seriesIndex: 0,
           min,
           max,
           dimension: 2,
@@ -145,11 +215,23 @@
             itemStyle: { borderColor: t.surface, borderWidth: 2, borderRadius: 2 },
             emphasis: { itemStyle: { borderColor: t.text, borderWidth: 1 } },
           },
+          ...(diff
+            ? [{ type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: diffBars, barWidth: '60%', emphasis: { disabled: true } }]
+            : []),
         ],
       },
       { notMerge: true },
     )
     chart.resize()
+  }
+
+  let measureCtx: CanvasRenderingContext2D | null = null
+  /** Width the function labels need (bold, the widest case), capped like the axis truncation. */
+  function labelWidth(labels: string[]) {
+    measureCtx ??= document.createElement('canvas').getContext('2d')
+    if (!measureCtx) return LABEL_MAX
+    measureCtx.font = 'bold 11px system-ui, sans-serif'
+    return Math.min(LABEL_MAX, Math.ceil(Math.max(0, ...labels.map((l) => measureCtx!.measureText(l).width))))
   }
 
   function escape(s: string) {
@@ -166,7 +248,9 @@
       const fn =
         p.componentType === 'yAxis'
           ? String((p as unknown as { value: string }).value)
-          : result?.functions[(p.value as number[])[1]]
+          : p.seriesIndex === 1
+            ? result?.functions[p.dataIndex]
+            : result?.functions[(p.value as number[])[1]]
       if (fn) {
         view.highlight = null
         view.fn = view.fn === fn ? null : fn
@@ -211,8 +295,10 @@
     const name = `heatmap-${view.groupBy}-${view.stat}-${view.rank}`
     if (format === 'tsv') {
       const r = result
-      const header = ['function', ...r.groups.map((g) => g.name), view.rank === 'difference' ? 'max_minus_min' : 'sum_of_groups']
-      download(toTsv(header, r.functions.map((f, i) => [f, ...r.values[i], r.scores[i]])), `${safeFileName(`jarrvis-${name}`)}.tsv`)
+      const diff = groupDifference(r.groups, r.values)
+      const header = ['function', ...r.groups.map((g) => g.name), 'sum_of_groups', ...(diff ? [diff.signed ? diff.label.replace(' − ', ' - ') : 'highest_minus_lowest'] : [])]
+      const rows = r.functions.map((f, i) => [f, ...r.values[i], r.values[i].reduce((a, v) => a + v, 0), ...(diff ? [diff.values[i]] : [])])
+      download(toTsv(header, rows), `${safeFileName(`jarrvis-${name}`)}.tsv`)
     } else {
       await saveChart(chart, format, name, (forExport) => render(forExport))
     }
@@ -220,7 +306,9 @@
 
   const height = $derived(result ? Math.max(160, result.functions.length * ROW + 100) : 160)
   // Cap each group's column so a few groups don't stretch into long bars.
-  const width = $derived(result ? `min(100%, ${300 + result.groups.length * 120}px)` : '100%')
+  const width = $derived(
+    result ? `min(100%, ${300 + result.groups.length * 120 + (result.groups.length > 1 ? DIFF_W + 40 : 0)}px)` : '100%',
+  )
 </script>
 
 <section class="heatmap" aria-busy={busy}>
@@ -228,7 +316,10 @@
     <h2>Functions by group</h2>
     <ExportButtons {onexport} disabled={!result || result.functions.length === 0} />
   </div>
-  <p class="desc">Each function's total across all taxa, per group. Click a function to see which taxa contribute to it.</p>
+  <p class="desc">
+    Each function's total across all taxa, per group, with the difference between groups on the right. Click a function
+    to see which taxa contribute to it.
+  </p>
 
   <div class="controls">
     <label>

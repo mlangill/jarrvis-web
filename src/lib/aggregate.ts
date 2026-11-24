@@ -241,6 +241,38 @@ export async function functionHeatmap(
   return { ...info, functions, scores, matchingFunctions: Number(cells[0]?.matching ?? 0), values }
 }
 
+export interface GroupDifference {
+  /** Column label, e.g. "B − A", or "Highest − lowest". */
+  label: string
+  /** True when values are signed (exactly two groups: second minus first). */
+  signed: boolean
+  /** values[f]: the difference for function f. */
+  values: number[]
+  /** For each function, the indexes of its highest and lowest groups. */
+  extremes: { high: number; low: number }[]
+}
+
+/**
+ * Per-function difference between groups, from heatmap values (absent = 0). With two groups it
+ * is signed, second minus first; with more it is highest minus lowest. Null with one group.
+ */
+export function groupDifference(groups: GroupInfo[], values: number[][]): GroupDifference | null {
+  if (groups.length < 2) return null
+  const extremes = values.map((row) => {
+    let high = 0
+    let low = 0
+    row.forEach((v, i) => {
+      if (v > row[high]) high = i
+      if (v < row[low]) low = i
+    })
+    return { high, low }
+  })
+  if (groups.length === 2) {
+    return { label: `${groups[1].name} − ${groups[0].name}`, signed: true, values: values.map((r) => r[1] - r[0]), extremes }
+  }
+  return { label: 'Highest − lowest', signed: false, values: values.map((r, f) => r[extremes[f].high] - r[extremes[f].low]), extremes }
+}
+
 export interface TaxaBarsOptions {
   groupBy: string
   level: Level

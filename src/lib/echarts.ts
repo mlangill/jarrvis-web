@@ -55,6 +55,8 @@ export function chartTheme(dark: boolean) {
     // Near-zero recedes toward the surface: light-to-dark on light, dark-to-light on dark.
     sequential: dark ? [...BLUE].reverse() : BLUE,
     categorical: dark ? CATEGORICAL_DARK : CATEGORICAL_LIGHT,
+    /** Diverging poles (blue ↔ red) for signed differences. */
+    diverging: dark ? { neg: CATEGORICAL_DARK[0], pos: CATEGORICAL_DARK[7] } : { neg: CATEGORICAL_LIGHT[0], pos: CATEGORICAL_LIGHT[7] },
     /** Neutral for "Other", outside the categorical set. */
     other: dark ? '#52514e' : '#c3c2b7',
   }
