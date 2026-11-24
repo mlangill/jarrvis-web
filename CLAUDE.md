@@ -4,7 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-This repo is a rebuild of JarrVis (https://github.com/dhwanidesai/JarrVis; preprint: https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1). JarrVis visualizes stratified microbiome function tables (sample groups → taxa → functions). So far the repo holds only `PLAN.md` and `LICENSE` (MIT). Nothing is scaffolded yet: there are no build, lint or test commands. **Read `PLAN.md` before starting work**: it has the scope, the architecture and the order of the first prompts. Update this file with real commands once the Vite app exists.
+This repo is a rebuild of JarrVis (https://github.com/dhwanidesai/JarrVis; preprint: https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1). JarrVis visualizes stratified microbiome function tables (sample groups → taxa → functions). **Read `PLAN.md` before starting work**: it has the scope, the architecture and the order of the first prompts. The app is scaffolded (Vite + Svelte 5 + TypeScript + DuckDB-WASM) but has no features yet. There is no test runner yet.
+
+## Commands
+
+- `npm run dev`: dev server on http://localhost:5173 (`.claude/launch.json` defines `dev` and `preview` for the browser pane)
+- `npm run check`: type-check (svelte-check plus tsc). CI runs this before building.
+- `npm run build`: production build to `dist/`
+- `npm run preview`: serve the built `dist/`
+
+Pushing to `main` runs `.github/workflows/deploy.yml`, which checks, builds and deploys to GitHub Pages.
+
+## Code layout
+
+- `src/lib/db.ts`: the one shared DuckDB instance (`getDb()`). The wasm and worker bundles are imported with `?url`, so Vite serves them from this site rather than a CDN. Don't switch to the jsDelivr bundles.
+- `vite.config.ts`: `base: './'` keeps asset paths relative, so the build works under the Pages subpath `/jarrvis-web/`. `@duckdb/duckdb-wasm` is excluded from `optimizeDeps`.
 
 ## Hard constraints
 
