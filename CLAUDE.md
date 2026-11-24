@@ -4,13 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-This repo is a rebuild of JarrVis (https://github.com/dhwanidesai/JarrVis; preprint: https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1). JarrVis visualizes stratified microbiome function tables (sample groups → taxa → functions). **Read `PLAN.md` before starting work**: it has the scope, the architecture and the order of the first prompts. The app (Vite + Svelte 5 + TypeScript + DuckDB-WASM) loads a 4-column stratified table and a sample metadata file, validates both and checks that their sample IDs match. It then shows a function × group heatmap (ECharts) and a groups → taxa → functions Sankey with click-to-highlight. Clicking a function in either drives a stacked bar of the taxa behind it (per group or per sample, absolute or relative) and a grouped table that filters to that function. Both follow shared settings: group-by column, taxonomic level, and mean or total.
+This repo is a rebuild of JarrVis (https://github.com/dhwanidesai/JarrVis; preprint: https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1). JarrVis visualizes stratified microbiome function tables (sample groups → taxa → functions). **Read `PLAN.md` before starting work**: it has the scope, the architecture and the order of the first prompts. The app (Vite + Svelte 5 + TypeScript + DuckDB-WASM) loads a stratified table (the 4-column JarrVis format, PICRUSt2 contrib/legacy/wide, or HUMAnN 2/3, auto-detected), a sample metadata file and an optional taxonomy file, validates them and checks that their sample IDs match. It then shows a groups → taxa → functions Sankey with click-to-highlight, a stacked bar of the taxa behind the selected function (per group or per sample, absolute or relative), a function × group heatmap with a difference column, and a grouped table. All follow shared settings: group-by column, taxonomic level, mean or total, and function search and ranking. Each view exports SVG/PNG/TSV, a demo button loads the TSD example, and an About page shows `docs/design.html`. It is live at https://morganlangille.com/jarrvis-web/.
+
+**`PLAN.md` → "Status" records what is done, what is not, and the agreed design for the next feature (saved views and shareable links), including the decisions still open. Read it before starting new work, and keep it current.**
 
 ## Commands
 
 - `npm run dev`: dev server on http://localhost:5173 (`.claude/launch.json` defines `dev` and `preview` for the browser pane)
 - `npm test`: Vitest, run once. Run one file with `npx vitest run src/lib/load.test.ts`, or one test with `-t "<name>"`.
-- `npm run check`: type-check (svelte-check for the app, tsc for `vite.config.ts` and for the tests via `tsconfig.test.json`). CI runs this before building.
+- `npm run check`: type-check (svelte-check for the app, tsc for `vite.config.ts` and for the tests via `tsconfig.test.json`). CI runs it and `npm test` before building, so both must pass before a push.
 - `npm run build`: production build to `dist/`
 - `npm run preview`: serve the built `dist/`
 
@@ -62,10 +64,10 @@ Pushing to `main` runs `.github/workflows/deploy.yml`, which checks, builds and 
 
 ## Test data
 
-`test-data/README.md` lists each file, where it came from and its format. `scripts/fetch-test-data.sh` downloads them all again. `test-data/large/` is gitignored: it holds the full 229k-row TSD file from the original JarrVis repo and is absent on a fresh clone or in CI, so tests must not depend on it. `src/lib/load.testdata.test.ts` loads the committed files. The Bedford Basin PICRUSt2 and IBD HUMAnN2 datasets from the preprint aren't here yet.
+`test-data/README.md` lists each file, where it came from and its format. `scripts/fetch-test-data.sh` downloads them all again. `test-data/large/` is gitignored: it holds the full 229k-row TSD file from the original JarrVis repo and is absent on a fresh clone or in CI, so tests must not depend on it. `src/lib/load.testdata.test.ts` loads the committed files. The Bedford Basin PICRUSt2 and IBD HUMAnN2 datasets from the preprint aren't here yet. `test-data/picrust2/chemerin/` (a local PICRUSt2 run with QIIME 2 taxonomy and metadata) is untracked: it may be unpublished lab data, so don't commit it without asking.
 
 In dev, Vite serves `.gz` files with `Content-Encoding: gzip`, so `fetch('/test-data/x.gz')` returns already-decompressed bytes. To test real gzip handling in the browser, use the file picker, not fetch.
 
 ## Workflow
 
-The developer previews changes live in a browser via the dev server. Keep each change small and verify it in the browser before moving on. Commit after every working step.
+The developer previews changes live in a browser via the dev server. Keep each change small and verify it in the browser before moving on. Commit after every working step, then push to `main` (which deploys) and check the Actions run succeeds. Update this file, `PLAN.md` "Status" and `docs/design.html` when behaviour changes.

@@ -86,9 +86,45 @@ Build on your own laptop, not the server: the app is static, so Claude Code can 
 - When something breaks, paste the exact error or describe what you see; don't fix it by hand first.
 - Ask it to add tests for the data layer early, since every view depends on it.
 
+## Status (Nov 24, 2026)
+
+Live at https://morganlangille.com/jarrvis-web/. The first prompts and most of version 1 are done; details of how each piece works are in `CLAUDE.md` and `docs/design.html` (the app's About page).
+
+### Done
+
+- Inputs: 4-column JarrVis format, PICRUSt2 contrib, legacy contrib and wide stratified, HUMAnN 2/3 stratified, auto-detected with a Format menu to override. Metadata file with any number of group columns. Optional taxonomy file (QIIME 2 `taxonomy.tsv`, DADA2 rank columns or a plain lineage) mapping sequence IDs to lineages. Validation messages and sample ID cross-checks for all of them.
+- Shared settings: group-by column, taxonomic level (phylum to species, by rank prefix), mean or total, function search, ranking by highest total or largest difference between groups.
+- Views, in page order: Sankey (click-to-highlight, draggable nodes, 4 to 30 taxa, choice of function count), stacked bar for the selected function (per group or per sample, absolute or relative), heatmap with a difference column, grouped table (optional higher-rank columns).
+- Export: SVG and PNG of each chart, TSV of the full summary behind each view.
+- Demo button loading the full TSD dataset; About page from `docs/design.html`; GitHub Pages deploy with check, test and build in CI.
+
+### Not done yet
+
+- Saved views and shareable URLs (designed below, not started)
+- PDF export
+- Contribution threshold and prevalence filters (only top N exists); abundance range filter from the original
+- Choosing which samples or groups to include, and reordering groups (e.g. months)
+- Searching and picking individual taxa; picking individual functions for the Sankey beyond search and top N
+- Locking a highlight and side-by-side comparison of two groups
+- Microbiome Helper input
+- Testing on the Bedford Basin PICRUSt2 and IBD HUMAnN2 data from the preprint, and on real PICRUSt2 output with a taxonomy file (`test-data/picrust2/chemerin/` is a local candidate, untracked)
+
+### Next: saved views and shareable links (design agreed in outline, decisions open)
+
+A link can't carry data, since nothing is uploaded. It carries only the view state in `src/lib/view.svelte.ts` (plus the input format choice), so the person opening it loads the same files and the screen is restored.
+
+- **Shareable link.** State that differs from the defaults is encoded after `#` in the URL (never sent to any server). Opening a link shows a banner asking for the files (naming the ones it was made with); once they validate, the settings apply. Settings that don't fit the data (a missing group column or function) are skipped with a note. The link carries a light data fingerprint (file names, row and sample counts) to detect different data. A link made on the demo data can load the demo automatically. The app should note next to the button that the link contains names (selected function, search text, group column and group or taxon names), though no data values.
+- **Saved views.** "Save view" stores the state under a name in the browser's local storage, with rename, delete and restore. Views made with the currently loaded data (by fingerprint) are listed first. Export and import of views as a small JSON file, for other devices or collaborators.
+- **Not saved:** dragged Sankey node positions, scroll position.
+- **Decisions still open** (recommendations in brackets):
+  1. Update the address bar live as settings change, or only on "Copy link"? [live, using replaceState so back history isn't filled]
+  2. Order: link first, then saved views with export and import, each verified and committed separately? [yes]
+  3. Should demo links load the example data automatically? [yes]
+  4. If the fingerprint differs: warn only, or refuse to apply? [warn only]
+
 ## Later
 
-- Direct import of PICRUSt2 and HUMAnN outputs
+- ~~Direct import of PICRUSt2 and HUMAnN outputs~~ (done)
 - Saved views and shareable URLs
 - Side-by-side comparison mode
 - Publish the rebuild and the preprint together
