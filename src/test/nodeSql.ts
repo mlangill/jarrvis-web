@@ -2,7 +2,7 @@
 // Same engine and SQL dialect as the browser, without needing a worker.
 import { createRequire } from 'node:module'
 import path from 'node:path'
-import type { Row, Sql } from '../lib/sql'
+import { SETUP_SQL, type Row, type Sql } from '../lib/sql'
 
 const require = createRequire(import.meta.url)
 const entry = require.resolve('@duckdb/duckdb-wasm/dist/duckdb-node-blocking.cjs')
@@ -20,6 +20,7 @@ export async function createNodeSql(): Promise<Sql> {
   )
   await db.instantiate()
   const conn = db.connect()
+  for (const statement of SETUP_SQL) conn.query(statement)
   return {
     async query<T extends Row = Row>(sql: string) {
       return conn.query(sql).toArray().map((r) => r.toJSON() as T)

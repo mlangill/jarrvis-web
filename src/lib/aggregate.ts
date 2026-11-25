@@ -5,6 +5,12 @@ import { META, STRAT } from './validate'
 
 export const TAXONOMY = 'taxonomy'
 export const GROUPED = 'grouped'
+/** Each collapsed taxon of the last groupTable: its id in GROUPED, and its label, path and ranks. */
+export const GROUPED_TAXA = 'grouped_taxa'
+const GROUPED_ROWS = `
+    SELECT g."group", t.tlabel AS taxon, t.tpath AS path, t.tkey AS ranks, g.function::VARCHAR AS function, g.value
+    FROM ${id(GROUPED)} g JOIN (SELECT DISTINCT tid, tkey, tlabel, tpath FROM ${id(GROUPED_TAXA)}) t USING (tid)
+    ORDER BY g.value DESC, g."group", t.tlabel, g.function`
 
 /** Ranks recognized from prefixes like p__ or g__, highest first. */
 export const RANKS = [
@@ -151,33 +157,36 @@ async function groupInfo(sql: Sql, groupBy: string): Promise<{ groups: GroupInfo
 export async function groupTable(sql: Sql, { groupBy, level, stat, fn = null, limit = 200 }: GroupOptions): Promise<GroupedResult> {
   const tx = taxonExprs(level)
   const value = stat === 'mean' ? 'a.total / n.samples' : 'a.total'
+  // Collapsed taxa get small integer ids, and their text (label, path, ranks) is kept once in
+  // GROUPED_TAXA, so the big GROUPED table and its aggregation only hold compact keys.
+  await sql.query(`
+    CREATE OR REPLACE TABLE ${id(GROUPED_TAXA)} AS
+    WITH tx AS (SELECT taxon, ${tx.key} AS tkey, ${tx.label} AS tlabel, ${tx.path} AS tpath FROM ${id(TAXONOMY)})
+    SELECT tx.taxon, k.tid, tx.tkey, tx.tlabel, tx.tpath
+    FROM tx JOIN (SELECT tkey, row_number() OVER (ORDER BY tkey)::INTEGER AS tid FROM (SELECT DISTINCT tkey FROM tx)) k USING (tkey)`)
   await sql.query(`
     CREATE OR REPLACE TABLE ${id(GROUPED)} AS
     WITH
-      tx AS (SELECT taxon, ${tx.key} AS tkey, ${tx.label} AS tlabel, ${tx.path} AS tpath FROM ${id(TAXONOMY)}),
       ${groupCtes(groupBy)},
       a AS (
-        SELECT gs.grp, tx.tkey, any_value(tx.tlabel) AS tlabel, any_value(tx.tpath) AS tpath, s.function, sum(s.contribution) AS total
-        FROM ${id(STRAT)} s JOIN gs ON s.sample = gs.sample_id JOIN tx USING (taxon)
+        SELECT gs.grp, t.tid, s.function, sum(s.contribution) AS total
+        FROM ${id(STRAT)} s JOIN gs ON s.sample = gs.sample_id JOIN ${id(GROUPED_TAXA)} t USING (taxon)
         ${fn === null ? '' : `WHERE s.function = ${sqlString(fn)}`}
-        GROUP BY gs.grp, tx.tkey, s.function
+        GROUP BY gs.grp, t.tid, s.function
       )
-    SELECT a.grp AS "group", a.tlabel AS taxon, a.tpath AS path, a.tkey AS ranks, a.function, ${value} AS value, n.samples
+    SELECT a.grp AS "group", a.tid, a.function, ${value} AS value
     FROM a JOIN n USING (grp)`)
 
   const info = await groupInfo(sql, groupBy)
   const [{ n }] = await sql.query(`SELECT count(*) AS n FROM ${id(GROUPED)}`)
-  const rows = await sql.query<GroupedRow>(`
-    SELECT "group", taxon, path, ranks, function, value FROM ${id(GROUPED)}
-    ORDER BY value DESC, "group", taxon, function LIMIT ${Math.max(0, Math.floor(limit))}`)
+  const rows = await sql.query<GroupedRow>(`${GROUPED_ROWS} LIMIT ${Math.max(0, Math.floor(limit))}`)
 
   return { ...info, totalRows: Number(n), rows }
 }
 
 /** Every row of the last groupTable result (GROUPED), largest first, for export. */
 export async function groupedRows(sql: Sql): Promise<GroupedRow[]> {
-  return sql.query<GroupedRow>(`
-    SELECT "group", taxon, path, ranks, function, value FROM ${id(GROUPED)} ORDER BY value DESC, "group", taxon, function`)
+  return sql.query<GroupedRow>(GROUPED_ROWS)
 }
 
 /**

@@ -92,7 +92,7 @@ Live at https://morganlangille.com/jarrvis-web/. The first prompts and most of v
 
 ### Done
 
-- Inputs: 4-column JarrVis format, PICRUSt2 contrib, legacy contrib and wide stratified, HUMAnN 2/3 stratified, Microbiome Helper 2 stratified (tested on an 840 MB client table: loads in ~40 s), auto-detected with a Format menu to override. Metadata file with any number of group columns. Optional taxonomy file (QIIME 2 `taxonomy.tsv`, DADA2 rank columns or a plain lineage) mapping sequence IDs, or NCBI taxids for MH2's Kraken names, to lineages. Validation messages and sample ID cross-checks for all of them. Tested by hand on real PICRUSt2 output with its QIIME 2 taxonomy (`test-data/picrust2/chemerin/`), which collapses correctly.
+- Inputs: 4-column JarrVis format, PICRUSt2 contrib, legacy contrib and wide stratified, HUMAnN 2/3 stratified, Microbiome Helper 2 stratified (tested on an 840 MB client table: loads in ~36 s into 0.14 GB; inputs are read from disk and stored compressed, ~10 bytes per value, so hundreds of samples fit), auto-detected with a Format menu to override. Metadata file with any number of group columns. Optional taxonomy file (QIIME 2 `taxonomy.tsv`, DADA2 rank columns or a plain lineage) mapping sequence IDs, or NCBI taxids for MH2's Kraken names, to lineages. Validation messages and sample ID cross-checks for all of them. Tested by hand on real PICRUSt2 output with its QIIME 2 taxonomy (`test-data/picrust2/chemerin/`), which collapses correctly.
 - Shared settings: group-by column, taxonomic level (phylum to species, by rank prefix), mean or total, function search, ranking by highest total or largest difference between groups.
 - Views, in page order: Sankey (click-to-highlight, draggable nodes, 4 to 30 taxa, choice of function count), stacked bar for the selected function (per group or per sample, absolute or relative), heatmap with a difference column, grouped table (optional higher-rank columns).
 - Export: SVG and PNG of each chart, TSV of the full summary behind each view.
@@ -107,6 +107,7 @@ Live at https://morganlangille.com/jarrvis-web/. The first prompts and most of v
 - Searching and picking individual taxa; picking individual functions for the Sankey beyond search and top N
 - Locking a highlight and side-by-side comparison of two groups
 - Testing on larger, real HUMAnN stratified files (only a tiny synthetic one has been tried)
+- Loading time for very large inputs: each 30M-value chunk is another pass over the file; filtering tiny values on input is possible but not wanted unless needed
 - Collapsing MH2 taxa to ranks with a real taxid → lineage file (e.g. from taxonkit); the matching is unit-tested only
 
 ### Next: saved views and shareable links (design agreed in outline, decisions open)

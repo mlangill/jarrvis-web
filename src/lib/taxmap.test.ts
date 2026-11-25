@@ -20,7 +20,7 @@ async function setupTable(ids: string[]) {
     sql,
     's.tsv',
     tsv(['sample', 'taxon', 'function', 'contribution'], ...ids.map((x, i) => ['S1', x, 'EC:1', String(i + 1)])),
-    { table: STRAT_RAW, allVarchar: true },
+    { table: STRAT_RAW, allVarchar: true, lazy: true },
   )
   if (!(await validateStratified(sql, t.columns)).summary) throw new Error('table')
   const m = await loadTable(sql, 'm.tsv', tsv(['sample_id', 'type'], ['S1', 'A']), { table: META_RAW, allVarchar: true })

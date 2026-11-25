@@ -9,7 +9,7 @@
   import { view } from './lib/view.svelte'
   import Issues from './components/Issues.svelte'
   import { duckdbVersion, getSql } from './lib/db'
-  import { describeTable, LoadError, loadTable, previewRows } from './lib/load'
+  import { describeTable, LoadError, loadTable, previewRows, userMessage } from './lib/load'
   import type { Sql } from './lib/sql'
   import { formatShort, STRAT_FORMATS, type StratFormat } from './lib/formats'
   import {
@@ -71,7 +71,7 @@
     Object.assign(panel, { ...emptyPanel(), loading: file.name })
     try {
       const sql = await getSql()
-      const loaded = await loadTable(sql, file.name, file, { table: rawTable, allVarchar: true })
+      const loaded = await loadTable(sql, file.name, file, { table: rawTable, allVarchar: true, lazy: rawTable === STRAT_RAW })
       const result = await validate(sql, loaded.columns)
       const shown = result.summary ? cleanTable : rawTable
       Object.assign(panel, {
@@ -83,7 +83,7 @@
       return result.summary ?? null
     } catch (err) {
       const message =
-        err instanceof LoadError ? err.message : `Something went wrong: ${err instanceof Error ? err.message : err}`
+        err instanceof LoadError ? err.message : `Something went wrong: ${userMessage(err)}`
       if (!(err instanceof LoadError)) console.error(err)
       Object.assign(panel, { fileName: file.name, issues: [{ severity: 'error', message }] })
       // Drop any clean table from an earlier file so nothing downstream uses stale data.

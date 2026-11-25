@@ -99,7 +99,7 @@ export function conversion(format: Exclude<StratFormat, 'jarrvis'>, columns: Col
           `Read as HUMAnN stratified output: ${names.length - 1} sample columns. Only per-taxon rows (function|taxon) are used; ` +
           `community totals, ${HUMANN_SPECIAL.join(', ')} and zero values are left out. Suffixes such as "_Abundance-RPKs" are removed from sample names.`,
         check: {
-          sql: `SELECT count(*) AS n FROM ${raw} WHERE strpos(${feature}, '|') > 0`,
+          sql: `SELECT count(*) AS n FROM (SELECT 1 FROM ${raw} WHERE strpos(${feature}, '|') > 0 LIMIT 1)`,
           error:
             'This HUMAnN table has no per-taxon rows (function|taxon). Use the stratified output, for example from humann_split_stratified_table, or the full joined table.',
         },
@@ -126,7 +126,7 @@ export function conversion(format: Exclude<StratFormat, 'jarrvis'>, columns: Col
           `rows with an ${MH2_SPECIAL.join(', ')} function and zero values are left out. Taxa are Kraken names with their taxid ` +
           `and no lineage, so collapsing to a rank needs a taxonomy file keyed by taxid or by the full name.`,
         check: {
-          sql: `SELECT count(*) AS n FROM ${raw} WHERE strpos(${feature}, '|') > 0`,
+          sql: `SELECT count(*) AS n FROM (SELECT 1 FROM ${raw} WHERE strpos(${feature}, '|') > 0 LIMIT 1)`,
           error: 'This table has no function|taxon rows in its first column.',
         },
       }

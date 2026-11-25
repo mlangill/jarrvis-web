@@ -16,7 +16,7 @@ beforeAll(async () => {
 })
 
 async function setup(strat: Uint8Array, meta: Uint8Array) {
-  const s = await loadTable(sql, 's.tsv', strat, { table: STRAT_RAW, allVarchar: true })
+  const s = await loadTable(sql, 's.tsv', strat, { table: STRAT_RAW, allVarchar: true, lazy: true })
   const sv = await validateStratified(sql, s.columns)
   if (!sv.summary) throw new Error(JSON.stringify(sv.issues))
   const m = await loadTable(sql, 'm.tsv', meta, { table: META_RAW, allVarchar: true })

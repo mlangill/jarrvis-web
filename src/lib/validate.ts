@@ -2,13 +2,15 @@
 // Both are loaded as all-text tables (STRAT_RAW, META_RAW); validation finds problems and, when
 // there are no errors, writes the clean typed tables (STRAT, META) that every view reads from.
 import { conversion, detectFormat, type StratFormat } from './formats'
-import { describeTable, type Column } from './load'
+import { describeTable, releaseTable, type Column } from './load'
 import { sqlIdent as id, sqlString, type Sql } from './sql'
 
 export const STRAT_RAW = 'strat_raw'
 /** A view of STRAT_RAW as the 4 columns, when it was in another format (a view, so big inputs aren't copied). */
 export const STRAT_CONVERTED = 'strat_converted'
 export const STRAT = 'strat'
+/** Counts and distinct names from the first pass over the stratified table. */
+const STRAT_NAMES = 'strat_names'
 export const META_RAW = 'metadata_raw'
 export const META = 'metadata'
 
@@ -54,6 +56,13 @@ export interface Result<S> {
 }
 
 const EXAMPLES = 5
+/** Chunk sizes for big stratified tables; tests lower them to exercise chunking. */
+export const chunking = {
+  /** Rows built per pass over the file when making STRAT (about 0.7 GB before compression). */
+  build: 30_000_000,
+  /** Rows per chunk when checking for repeated rows. */
+  dupes: 2_000_000,
+}
 /** Contribution values treated as missing rather than malformed. */
 const MISSING = ['', 'NA', 'N/A', 'NaN', 'nan', 'null', 'NULL', '-']
 const missingList = MISSING.map(sqlString).join(', ')
@@ -62,10 +71,11 @@ const num = (v: unknown) => Number(v ?? 0)
 const plural = (n: number, word: string, pluralWord = `${word}s`) => `${n.toLocaleString()} ${n === 1 ? word : pluralWord}`
 
 /**
- * Validate the stratified table in STRAT_RAW and, if it has no errors, build STRAT. A table in
- * another format (detected, or as given) is read through the STRAT_CONVERTED view. On success
- * STRAT_RAW is dropped to free memory (inputs can be close to the 4 GB wasm limit), so reading the
- * file as another format means loading it again. After an error it is kept.
+ * Validate the stratified table in STRAT_RAW and, if it has no errors, build STRAT. STRAT_RAW is
+ * normally a lazy view over the file (loadTable's `lazy`), and a table in another format is read
+ * through the STRAT_CONVERTED view, so the input is never copied into memory as text: one pass
+ * gathers counts and names, a second builds STRAT. On success STRAT_RAW is released, so reading
+ * the file as another format means loading it again. After an error it is kept for the preview.
  */
 export async function validateStratified(
   sql: Sql,
@@ -73,6 +83,7 @@ export async function validateStratified(
   requested: StratFormat | 'auto' = 'auto',
 ): Promise<Result<StratifiedSummary>> {
   await sql.query(`DROP TABLE IF EXISTS ${id(STRAT)}`)
+  await sql.query('CHECKPOINT') // frees the old table's blocks
   await sql.query(`DROP VIEW IF EXISTS ${id(STRAT_CONVERTED)}`)
   const issues: Issue[] = []
   const format = requested === 'auto' ? detectFormat(rawColumns) : requested
@@ -116,16 +127,24 @@ export async function validateStratified(
     return { issues }
   }
 
-  const [counts] = await sql.query(`
-    SELECT
+  // Pass 1 over the file: counts for the checks, and the distinct names for the ENUM types.
+  const sample = `trim(${s})`
+  const taxon = `coalesce(nullif(trim(${t}), ''), 'unclassified')`
+  const fn = `trim(${f})`
+  await sql.query(`
+    CREATE OR REPLACE TEMP TABLE ${id(STRAT_NAMES)} AS SELECT
       count(*) AS n,
       count(*) FILTER (WHERE ${blank(s)}) AS no_sample,
       count(*) FILTER (WHERE ${blank(f)}) AS no_function,
       count(*) FILTER (WHERE ${blank(t)}) AS no_taxon,
       count(*) FILTER (WHERE ${isMissing}) AS no_value,
       count(*) FILTER (WHERE ${isBad}) AS bad_value,
-      count(*) FILTER (WHERE TRY_CAST(${value} AS DOUBLE) < 0) AS negative
+      count(*) FILTER (WHERE TRY_CAST(${value} AS DOUBLE) < 0) AS negative,
+      list(DISTINCT ${sample}) FILTER (WHERE NOT ${blank(s)}) AS samples,
+      list(DISTINCT ${taxon}) AS taxa,
+      list(DISTINCT ${fn}) FILTER (WHERE NOT ${blank(f)}) AS functions
     FROM ${raw}`)
+  const [counts] = await sql.query(`SELECT * EXCLUDE (samples, taxa, functions) FROM ${id(STRAT_NAMES)}`)
   const n = num(counts.n)
 
   const badValues = num(counts.bad_value)
@@ -160,28 +179,36 @@ export async function validateStratified(
     issues.push({ severity: 'warning', message: `${plural(num(counts.negative), 'row has', 'rows have')} a negative contribution.` })
   }
 
-  const dupes = await sql.query<{ k: string; n: bigint }>(`
-    SELECT concat_ws(' / ', trim(${s}), trim(${t}), trim(${f})) AS k, count(*) OVER () AS n
-    FROM ${raw} GROUP BY trim(${s}), trim(${t}), trim(${f}) HAVING count(*) > 1 LIMIT 3`)
-  if (dupes.length > 0) {
-    issues.push({
-      severity: 'info',
-      message: `${plural(num(dupes[0].n), 'sample / taxon / function combination appears', 'sample / taxon / function combinations appear')} more than once. Their contributions will be added together (common when several strains share a species name).`,
-      examples: dupes.map((d) => d.k),
-    })
+  if (hasErrors(issues)) {
+    await sql.query(`DROP TABLE IF EXISTS ${id(STRAT_NAMES)}`)
+    return { issues }
   }
 
-  if (hasErrors(issues)) return { issues }
+  // Sample, taxon and function names are stored once each, as ENUM types (sorted, so ORDER BY
+  // still sorts by name), which makes STRAT about a third of the size with plain text.
+  await dropOldTypes(sql)
+  const serial = ++typeSerial
+  const types = { samples: `strat_sample_${serial}`, taxa: `strat_taxon_${serial}`, functions: `strat_function_${serial}` }
+  for (const [col, type] of Object.entries(types)) {
+    await sql.query(`CREATE TYPE ${id(type)} AS ENUM (SELECT unnest(list_sort(${col})) FROM ${id(STRAT_NAMES)})`)
+    stratTypes.push(type)
+  }
+  await sql.query(`DROP TABLE ${id(STRAT_NAMES)}`)
 
+  // Pass 2 over the file: the clean table. Rows are held uncompressed until a CHECKPOINT
+  // compresses them, so a big table is built in chunks of functions, each a pass over the file,
+  // with a checkpoint after each to keep the uncompressed part to about chunking.build rows.
   await sql.query(`
-    CREATE TABLE ${id(STRAT)} AS
-    SELECT
-      trim(${s}) AS sample,
-      coalesce(nullif(trim(${t}), ''), 'unclassified') AS taxon,
-      trim(${f}) AS function,
-      CAST(${value} AS DOUBLE) AS contribution
-    FROM ${raw}
-    WHERE NOT ${isMissing}`)
+    CREATE TABLE ${id(STRAT)} (sample ${id(types.samples)}, taxon ${id(types.taxa)}, function ${id(types.functions)}, contribution DOUBLE)`)
+  const parts = Math.max(1, Math.ceil((n - num(counts.no_value)) / chunking.build))
+  for (let i = 0; i < parts; i++) {
+    await sql.query(`
+      INSERT INTO ${id(STRAT)}
+      SELECT ${sample}, ${taxon}, ${fn}, CAST(${value} AS DOUBLE)
+      FROM ${raw}
+      WHERE NOT ${isMissing} ${parts > 1 ? `AND hash(${fn}) % ${parts} = ${i}` : ''}`)
+    await sql.query('CHECKPOINT')
+  }
 
   const [sum] = await sql.query(`
     SELECT count(*) AS rows, count(DISTINCT sample) AS samples, count(DISTINCT taxon) AS taxa,
@@ -192,13 +219,53 @@ export async function validateStratified(
     return { issues: [...issues, { severity: 'error', message: 'No rows have a contribution value.' }] }
   }
   if (num(sum.nonzero) === 0) issues.push({ severity: 'warning', message: 'Every contribution is zero.' })
+
+  // Repeated sample / taxon / function rows. Grouping every row at once needs a hash table as big
+  // as STRAT, so it runs on chunks of samples of about chunking.dupes rows each.
+  const chunks = Math.max(1, Math.ceil(num(sum.rows) / chunking.dupes))
+  let dupeCount = 0
+  const dupeExamples: string[] = []
+  for (let i = 0; i < chunks; i++) {
+    const dupes = await sql.query<{ k: string; n: bigint }>(`
+      SELECT concat_ws(' / ', sample::VARCHAR, taxon::VARCHAR, function::VARCHAR) AS k, count(*) OVER () AS n
+      FROM ${id(STRAT)} ${chunks > 1 ? `WHERE enum_code(sample) % ${chunks} = ${i}` : ''}
+      GROUP BY sample, taxon, function HAVING count(*) > 1 LIMIT 3`)
+    if (dupes.length === 0) continue
+    dupeCount += num(dupes[0].n)
+    dupeExamples.push(...dupes.map((d) => d.k))
+  }
+  if (dupeCount > 0) {
+    issues.push({
+      severity: 'info',
+      message: `${plural(dupeCount, 'sample / taxon / function combination appears', 'sample / taxon / function combinations appear')} more than once. Their contributions will be added together (common when several strains share a species name).`,
+      examples: dupeExamples.slice(0, 3),
+    })
+  }
+
+  // The file isn't needed again: changing the format re-reads it.
   await sql.query(`DROP VIEW IF EXISTS ${id(STRAT_CONVERTED)}`)
-  await sql.query(`DROP TABLE IF EXISTS ${id(STRAT_RAW)}`)
+  await releaseTable(sql, STRAT_RAW)
 
   return {
     issues,
     summary: { format, rows: num(sum.rows), samples: num(sum.samples), taxa: num(sum.taxa), functions: num(sum.functions) },
   }
+}
+
+let typeSerial = 0
+/** ENUM types made for earlier STRAT tables, dropped once nothing uses them. */
+let stratTypes: string[] = []
+
+async function dropOldTypes(sql: Sql) {
+  const kept: string[] = []
+  for (const type of stratTypes) {
+    try {
+      await sql.query(`DROP TYPE IF EXISTS ${id(type)}`)
+    } catch {
+      kept.push(type) // still used by a table built from the old STRAT; try again next time
+    }
+  }
+  stratTypes = kept
 }
 
 /** Validate the metadata in META_RAW and, if it has no errors, build META (first column renamed sample_id). */

@@ -5,7 +5,7 @@ import mvpWasm from '@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url'
 import mvpWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url'
 import ehWasm from '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url'
 import ehWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url'
-import type { Row, Sql } from './sql'
+import { SETUP_SQL, type Row, type Sql } from './sql'
 
 const BUNDLES: duckdb.DuckDBBundles = {
   mvp: { mainModule: mvpWasm, mainWorker: mvpWorker },
@@ -32,6 +32,7 @@ export function getSql(): Promise<Sql> {
   sqlPromise ??= (async () => {
     const db = await getDb()
     const conn = await db.connect()
+    for (const statement of SETUP_SQL) await conn.query(statement)
     return {
       async query<T extends Row = Row>(sql: string) {
         const table = await conn.query(sql)

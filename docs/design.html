@@ -384,7 +384,7 @@ n(g)     = samples in g that have any row in the table</div>
       <thead><tr><th>File</th><th>Role</th></tr></thead>
       <tbody>
         <tr><td><code>lib/sql.ts</code></td><td>The small <code>Sql</code> interface all data code is written against, so the same code runs in the browser and in tests</td></tr>
-        <tr><td><code>lib/db.ts</code></td><td>The one DuckDB instance in the browser; files are read lazily, not copied into memory</td></tr>
+        <tr><td><code>lib/db.ts</code></td><td>The one DuckDB instance in the browser, with a compressed in-memory database; files are read lazily, not copied into memory</td></tr>
         <tr><td><code>lib/load.ts</code></td><td>Reading files into text tables, one at a time, via staging tables</td></tr>
         <tr><td><code>lib/formats.ts</code></td><td>Format detection and conversion of PICRUSt2 and HUMAnN output</td></tr>
         <tr><td><code>lib/validate.ts</code></td><td>Checks for the table and metadata, the sample-ID cross-check, and the clean tables</td></tr>
@@ -410,7 +410,7 @@ n(g)     = samples in g that have any row in the table</div>
   <ul>
     <li>Group comparisons are descriptive. There are no significance tests or standardized effect sizes yet.</li>
     <li>Data is never saved: reloading the page means loading the files again.</li>
-    <li>The browser's database is capped at 4 GB. An 840 MB Microbiome Helper 2 table (14 million rows once converted) loads in about 40 seconds and then responds in about a second; much larger tables may run out of memory. Changing the Format menu re-reads the file.</li>
+    <li>The browser's database is capped at 4 GB (a WebAssembly limit, whatever the computer's memory). The input file is never copied into it: the table is read straight from disk twice, once to check it and once to build a compact, compressed table of about 10 bytes per value. An 840 MB Microbiome Helper 2 table (14 million values) loads in about 40 seconds into 0.14 GB; in tests, 175 million values (500 samples) fit in 1.5 GB with views taking 3–8 seconds. Tables over 30 million values are built in several passes, so they load more slowly. Changing the Format menu re-reads the file.</li>
     <li>The tool is designed for a desktop screen; on a phone the toolbar takes too much room.</li>
   </ul>
   <h3>Planned</h3>

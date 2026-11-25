@@ -10,6 +10,7 @@ import {
   META_RAW,
   STRAT,
   STRAT_RAW,
+  chunking,
   validateMetadata,
   validateStratified,
   type Issue,
@@ -25,7 +26,7 @@ beforeAll(async () => {
 })
 
 async function strat(name: string, data: Uint8Array) {
-  const t = await loadTable(sql, name, data, { table: STRAT_RAW, allVarchar: true })
+  const t = await loadTable(sql, name, data, { table: STRAT_RAW, allVarchar: true, lazy: true })
   return validateStratified(sql, t.columns)
 }
 async function meta(name: string, data: Uint8Array) {
@@ -125,13 +126,30 @@ describe('validateStratified', () => {
     ])
   })
 
+  it('builds big tables in chunks with the same result', async () => {
+    const rows = [['S1', 'g__A', 'EC:1', '1'], ['S1', 'g__A', 'EC:1', '2'], ['S2', 'g__B', 'EC:2', '3'], ['S3', 'g__C', 'EC:3', '4'], ['S3', 'g__A', 'EC:2', 'NA']]
+    const all = async () => sql.query(`SELECT * FROM ${STRAT} ORDER BY ALL`)
+    const one = await strat('t.tsv', tsv(HEADER, ...rows))
+    const expected = await all()
+    const saved = { ...chunking }
+    Object.assign(chunking, { build: 1, dupes: 1 })
+    try {
+      const many = await strat('t.tsv', tsv(HEADER, ...rows))
+      expect(many).toEqual(one)
+      expect(await all()).toEqual(expected)
+    } finally {
+      Object.assign(chunking, saved)
+    }
+    expect(one.issues).toContainEqual(expect.objectContaining({ severity: 'info', examples: ['S1 / g__A / EC:1'] }))
+  })
+
   it('rejects a HUMAnN table with no per-taxon rows', async () => {
     const r = await strat('h.tsv', tsv(['# Gene Family', 'S1'], ['UniRef90_X', '5']))
     expect(errors(r.issues)).toEqual([expect.stringMatching(/no per-taxon rows/)])
   })
 
   it('uses a chosen format instead of detecting one, and explains a mismatch', async () => {
-    const t = await loadTable(sql, 't.tsv', tsv(HEADER, ['S1', 'g__A', 'EC:1', '1']), { table: STRAT_RAW, allVarchar: true })
+    const t = await loadTable(sql, 't.tsv', tsv(HEADER, ['S1', 'g__A', 'EC:1', '1']), { table: STRAT_RAW, allVarchar: true, lazy: true })
     const r = await validateStratified(sql, t.columns, 'picrust2-contrib')
     expect(errors(r.issues)).toEqual([expect.stringMatching(/doesn't look like PICRUSt2 contributions output.*Found: Sample, Genus, Gene, Contribution/)])
     expect((await validateStratified(sql, t.columns, 'jarrvis')).summary?.format).toBe('jarrvis')
