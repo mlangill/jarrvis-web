@@ -18,4 +18,4 @@ Run `scripts/fetch-test-data.sh` to download everything here. Files in `large/` 
 
 The files directly under `picrust2/` and `humann2/` are tiny synthetic tables from unit tests. They're for checking formats, not realistic sizes. `picrust2/chemerin/` is the realistic PICRUSt2 set; there's no large real HUMAnN file yet.
 
-`mh2/` is gitignored and must not be committed: it holds a Microbiome Helper 2 stratified table from an IMR client, a random 300-KO subset of it, and placeholder metadata, for local testing only.
+`mh2/mh2-random-300-KOs.txt.gz` is a Microbiome Helper 2 stratified table (`KO_Taxonomy`, RPKM, 12 samples D1–D12): every row for 300 randomly chosen KOs from a real 840 MB table. `mh2/placeholder-metadata.tsv` groups D1–D6 as A and D7–D12 as B; the groups are made up. The full table is kept in `large/` and must not be committed.

@@ -73,6 +73,7 @@ describe('validateStratified', () => {
     ['picrust2/pred_metagenome_strat.tsv.gz', 'picrust2-wide', { rows: 66, samples: 3, taxa: 10, functions: 3 }],
     ['picrust2/path_abun_strat.tsv.gz', 'picrust2-wide', { rows: 9, samples: 2, taxa: 3, functions: 2 }],
     ['humann2/humann2_strat_example.tsv.gz', 'humann', { rows: 18, samples: 4, taxa: 3, functions: 14 }],
+    ['mh2/mh2-random-300-KOs.txt.gz', 'mh2', { rows: 303693, samples: 12, taxa: 23115, functions: 300 }],
   ])('detects and converts %s', async (path, format, counts) => {
     const r = await strat(path.split('/').pop()!, testFile(path))
     expect(errors(r.issues)).toEqual([])

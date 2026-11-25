@@ -108,7 +108,6 @@ Live at https://morganlangille.com/jarrvis-web/. The first prompts and most of v
 - Locking a highlight and side-by-side comparison of two groups
 - Testing on larger, real HUMAnN stratified files (only a tiny synthetic one has been tried)
 - Collapsing MH2 taxa to ranks with a real taxid → lineage file (e.g. from taxonkit); the matching is unit-tested only
-- A public MH2 example: the client table can't be published, so it would need a synthetic or public dataset
 
 ### Next: saved views and shareable links (design agreed in outline, decisions open)
 
