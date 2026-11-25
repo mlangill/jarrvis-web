@@ -80,7 +80,7 @@ describe('validateStratified', () => {
     expect(errors(r.issues)).toEqual([])
     expect(r.issues[0]).toMatchObject({ severity: 'info', message: expect.stringMatching(/^Read as /) })
     expect(r.summary).toEqual({ format, ...counts })
-  })
+  }, 30_000) // the MH2 example is 300k rows; CI runners are slower than a laptop
 
   it('reads PICRUSt2 contributions with taxon_function_abun as the contribution', async () => {
     await strat('c.tsv.gz', testFile('picrust2/metagenome_contrib.tsv.gz'))
