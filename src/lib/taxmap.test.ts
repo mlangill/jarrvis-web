@@ -70,6 +70,14 @@ describe('taxonomy file', () => {
     expect(await ranksOf('OTU_1')).toEqual([{ phylum: 'Firmicutes', genus: 'Blautia', species: null }])
   })
 
+  it('matches Kraken-style taxa by the taxid in their name', async () => {
+    await setupTable(['Bacteroides fragilis (taxid 817)', 'cellular organisms (taxid 131567)'])
+    await taxmap(tsv(['taxid', 'lineage'], ['817', 'k__Bacteria;p__Bacteroidota;c__Bacteroidia;o__Bacteroidales;f__Bacteroidaceae;g__Bacteroides;s__Bacteroides fragilis']))
+    await buildTaxonomy(sql)
+    expect(await ranksOf('Bacteroides fragilis (taxid 817)')).toEqual([{ phylum: 'Bacteroidota', genus: 'Bacteroides', species: 'Bacteroides fragilis' }])
+    expect(await taxonomyMatch(sql)).toEqual([expect.objectContaining({ examples: ['cellular organisms (taxid 131567)'] })])
+  })
+
   it('reports taxa missing from the file, and a file that matches nothing', async () => {
     await setupTable(['seq1', 'seq2'])
     await taxmap(tsv(['id', 'taxon'], ['seq1', 'p__Firmicutes; g__Streptococcus']))

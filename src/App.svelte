@@ -205,7 +205,7 @@
   <div class="inputs">
     <InputPanel
       title="1. Stratified table"
-      description="The 4-column format (sample, taxon, function, contribution), PICRUSt2 contribution or stratified output, or HUMAnN stratified output. A header line is required."
+      description="The 4-column format (sample, taxon, function, contribution), PICRUSt2 contribution or stratified output, HUMAnN stratified output, or Microbiome Helper 2 stratified output. A header line is required."
       label="Choose the table"
       panel={strat}
       onfile={onStrat}
@@ -231,7 +231,7 @@
     />
     <InputPanel
       title="3. Taxonomy (optional)"
-      description="Only needed when the table's taxa are IDs without a lineage, such as PICRUSt2 sequence IDs. IDs in the first column, then a lineage column (a QIIME 2 taxonomy.tsv works) or one column per rank (Kingdom … Species)."
+      description="Only needed when the table's taxa are IDs without a lineage, such as PICRUSt2 sequence IDs or Microbiome Helper 2's Kraken names. IDs (or NCBI taxids) in the first column, then a lineage column (a QIIME 2 taxonomy.tsv works) or one column per rank (Kingdom … Species)."
       label="Choose the taxonomy"
       panel={tax}
       onfile={onTax}

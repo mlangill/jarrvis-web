@@ -17,3 +17,5 @@ Run `scripts/fetch-test-data.sh` to download everything here. Files in `large/` 
 `public/demo/` holds the example data the app's demo button loads: `TSD-stratified.tsv.gz` (the full TSD table above, gzipped, 2 MB) and `TSD-metadata.tsv` (a copy of the TSD metadata). The fetch script rebuilds them.
 
 The files directly under `picrust2/` and `humann2/` are tiny synthetic tables from unit tests. They're for checking formats, not realistic sizes. `picrust2/chemerin/` is the realistic PICRUSt2 set; there's no large real HUMAnN file yet.
+
+`mh2/` is gitignored and must not be committed: it holds a Microbiome Helper 2 stratified table from an IMR client, a random 300-KO subset of it, and placeholder metadata, for local testing only.

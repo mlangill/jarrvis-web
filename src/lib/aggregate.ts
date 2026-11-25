@@ -1,6 +1,6 @@
 // Taxonomy parsing and group-level aggregation over the clean `strat` and `metadata` tables.
 import { sqlIdent as id, sqlString, type Sql } from './sql'
-import { hasTaxonomyMap, TAXMAP } from './taxmap'
+import { hasTaxonomyMap, TAXID_OF, TAXMAP } from './taxmap'
 import { META, STRAT } from './validate'
 
 export const TAXONOMY = 'taxonomy'
@@ -39,7 +39,9 @@ const UNASSIGNED = ['', 'na', 'nan', 'none', 'unclassified', 'unknown', 'unassig
 export async function buildTaxonomy(sql: Sql): Promise<Rank[]> {
   const distinct = `SELECT DISTINCT taxon FROM ${id(STRAT)}`
   const source = (await hasTaxonomyMap(sql))
-    ? `SELECT s.taxon, coalesce(m.lineage, s.taxon) AS lineage FROM (${distinct}) s LEFT JOIN ${id(TAXMAP)} m ON m.id = s.taxon`
+    ? `SELECT s.taxon, coalesce(m.lineage, t.lineage, s.taxon) AS lineage FROM (${distinct}) s
+       LEFT JOIN ${id(TAXMAP)} m ON m.id = s.taxon
+       LEFT JOIN ${id(TAXMAP)} t ON t.id = ${TAXID_OF('s.taxon')}`
     : `SELECT taxon, taxon AS lineage FROM (${distinct})`
   const cols = RANKS.map((r) => {
     const re = sqlString(`^${r.prefix}__`)

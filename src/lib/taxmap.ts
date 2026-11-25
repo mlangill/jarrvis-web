@@ -8,6 +8,12 @@ import { STRAT, type Issue, type Result } from './validate'
 export const TAXMAP_RAW = 'taxmap_raw'
 export const TAXMAP = 'taxmap'
 
+/**
+ * SQL for the NCBI taxid in a Kraken-style taxon such as "Bacteroides fragilis (taxid 817)", or ''.
+ * A taxonomy file keyed by taxid (e.g. from taxonkit) matches these taxa.
+ */
+export const TAXID_OF = (expr: string) => `regexp_extract(${expr}, '\\(taxid (\\d+)\\)\\s*$', 1)`
+
 export interface TaxMapSummary {
   ids: number
   /** Where the lineage came from, for the panel, e.g. 'column "Taxon"' or 'rank columns'. */
@@ -100,14 +106,12 @@ export async function hasTaxonomyMap(sql: Sql): Promise<boolean> {
 
 /** How many of the stratified table's taxa the taxonomy file covers. */
 export async function taxonomyMatch(sql: Sql): Promise<Issue[]> {
-  const [c] = await sql.query(`
-    SELECT count(*) AS total, count(m.id) AS matched
-    FROM (SELECT DISTINCT taxon FROM ${id(STRAT)}) s LEFT JOIN ${id(TAXMAP)} m ON m.id = s.taxon`)
+  const taxa = `SELECT DISTINCT taxon FROM ${id(STRAT)}`
+  const found = `(s.taxon IN (SELECT id FROM ${id(TAXMAP)}) OR ${TAXID_OF('s.taxon')} IN (SELECT id FROM ${id(TAXMAP)}))`
+  const [c] = await sql.query(`SELECT count(*) AS total, count(*) FILTER (WHERE ${found}) AS matched FROM (${taxa}) s`)
   const [total, matched] = [num(c.total), num(c.matched)]
   if (matched === total) return []
-  const missing = await sql.query<{ taxon: string }>(`
-    SELECT s.taxon FROM (SELECT DISTINCT taxon FROM ${id(STRAT)}) s
-    WHERE s.taxon NOT IN (SELECT id FROM ${id(TAXMAP)}) ORDER BY s.taxon LIMIT 5`)
+  const missing = await sql.query<{ taxon: string }>(`SELECT s.taxon FROM (${taxa}) s WHERE NOT ${found} ORDER BY s.taxon LIMIT 5`)
   const examples = missing.map((m) => m.taxon)
   if (matched === 0) {
     return [

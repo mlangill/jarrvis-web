@@ -108,6 +108,22 @@ describe('validateStratified', () => {
     ])
   })
 
+  it('detects Microbiome Helper 2 output, splits function|taxon, and drops Unclassified functions and zeros', async () => {
+    const r = await strat('mh2.txt', tsv(
+      ['KO_Taxonomy', 'D1', 'D2'],
+      ['Unclassified|Sphaerotilus montanus (taxid 522889)', '100', '200'],
+      ['K00812|cellular organisms (taxid 131567)', '1.5', '0'],
+      ['K00812|Bacteroides fragilis (taxid 817)', '2', '3'],
+    ))
+    expect(errors(r.issues)).toEqual([])
+    expect(r.summary).toEqual({ format: 'mh2', rows: 3, samples: 2, taxa: 2, functions: 1 })
+    expect(await sql.query(`SELECT * FROM ${STRAT} ORDER BY sample, taxon`)).toEqual([
+      { sample: 'D1', taxon: 'Bacteroides fragilis (taxid 817)', function: 'K00812', contribution: 2 },
+      { sample: 'D1', taxon: 'cellular organisms (taxid 131567)', function: 'K00812', contribution: 1.5 },
+      { sample: 'D2', taxon: 'Bacteroides fragilis (taxid 817)', function: 'K00812', contribution: 3 },
+    ])
+  })
+
   it('rejects a HUMAnN table with no per-taxon rows', async () => {
     const r = await strat('h.tsv', tsv(['# Gene Family', 'S1'], ['UniRef90_X', '5']))
     expect(errors(r.issues)).toEqual([expect.stringMatching(/no per-taxon rows/)])

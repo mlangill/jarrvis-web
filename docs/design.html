@@ -145,8 +145,8 @@
   <p>
     It is a rebuild of <a href="https://github.com/dhwanidesai/JarrVis">JarrVis</a>
     (<a href="https://www.biorxiv.org/content/10.1101/2025.04.13.648596v1">preprint</a>). The original's
-    groups → taxa → functions Sankey is kept. The rebuild needs no R install or server, reads PICRUSt2 and HUMAnN
-    output directly, and copes with tables of hundreds of thousands of rows.
+    groups → taxa → functions Sankey is kept. The rebuild needs no R install or server, reads PICRUSt2, HUMAnN and
+    Microbiome Helper 2 output directly, and copes with tables of millions of rows.
   </p>
 
   <h2 id="principles">Design principles</h2>
@@ -194,7 +194,7 @@
 
         <rect class="box" x="390" y="20" width="160" height="70" rx="8" />
         <text class="t" x="404" y="44">Detect and convert</text>
-        <text class="s" x="404" y="63">PICRUSt2, HUMAnN</text>
+        <text class="s" x="404" y="63">PICRUSt2, HUMAnN, MH2</text>
         <text class="s" x="404" y="78">→ 4 columns</text>
 
         <rect class="box key" x="580" y="20" width="170" height="70" rx="8" />
@@ -262,6 +262,7 @@
         <tr><td>PICRUSt2 legacy contributions</td><td><code>CountContributedByOTU</code></td><td>Contribution is <code>CountContributedByOTU</code>; taxa are OTU IDs.</td></tr>
         <tr><td>PICRUSt2 wide stratified</td><td>2nd column <code>sequence</code></td><td>One column per sample becomes one row per sample; zeros are dropped.</td></tr>
         <tr><td>HUMAnN 2 or 3 stratified</td><td>1st column starts with <code>#</code></td><td>Only <code>function|taxon</code> rows are kept; community totals, UNMAPPED, UNINTEGRATED, UNGROUPED and zeros are dropped. Suffixes like <code>_Abundance-RPKs</code> are removed from sample names.</td></tr>
+        <tr><td>Microbiome Helper 2 stratified</td><td>1st column name ends in <code>Taxonomy</code> (e.g. <code>KO_Taxonomy</code>)</td><td>Rows are <code>function|taxon</code>, one column per sample. Rows whose function is <code>Unclassified</code> and zeros are dropped. Taxa are Kraken names with their taxid, e.g. <code>Bacteroides (taxid 816)</code>, and no lineage.</td></tr>
       </tbody>
     </table>
   </div>
@@ -271,7 +272,9 @@
 
   <h3>3. Taxonomy (optional)</h3>
   <p>
-    Needed only when the table's taxa are IDs, as PICRUSt2's are. The first column holds the IDs. The lineage can be
+    Needed only when the table's taxa have no lineage, as PICRUSt2's sequence IDs and Microbiome Helper 2's Kraken
+    names don't. The first column holds the IDs. For taxa ending in <code>(taxid N)</code>, an ID can also be the
+    NCBI taxid alone, so a taxid-to-lineage table (for example from <code>taxonkit reformat</code>) works. The lineage can be
     one column (a QIIME 2 <code>taxonomy.tsv</code> works as is) or one column per rank, as DADA2 writes. Lineages
     without rank prefixes are read by position, kingdom first. Table taxa missing from the file are reported.
   </p>
@@ -407,6 +410,7 @@ n(g)     = samples in g that have any row in the table</div>
   <ul>
     <li>Group comparisons are descriptive. There are no significance tests or standardized effect sizes yet.</li>
     <li>Data is never saved: reloading the page means loading the files again.</li>
+    <li>The browser's database is capped at 4 GB. An 840 MB Microbiome Helper 2 table (14 million rows once converted) loads in about 40 seconds and then responds in about a second; much larger tables may run out of memory. Changing the Format menu re-reads the file.</li>
     <li>The tool is designed for a desktop screen; on a phone the toolbar takes too much room.</li>
   </ul>
   <h3>Planned</h3>
@@ -415,7 +419,7 @@ n(g)     = samples in g that have any row in the table</div>
     <li><strong>Effect sizes.</strong> Rank functions by Cohen's d or log2 fold change, alongside the absolute difference.</li>
     <li><strong>More filters.</strong> Taxon search, a contribution or prevalence threshold, choosing and reordering groups (e.g. months in a time series).</li>
     <li><strong>Comparison mode.</strong> Two groups side by side.</li>
-    <li><strong>More inputs and output.</strong> Microbiome Helper output, and PDF export.</li>
+    <li><strong>PDF export.</strong></li>
   </ul>
 
   <footer>

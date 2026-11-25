@@ -6,7 +6,7 @@ import { describeTable, type Column } from './load'
 import { sqlIdent as id, sqlString, type Sql } from './sql'
 
 export const STRAT_RAW = 'strat_raw'
-/** STRAT_RAW converted to the 4 columns, when it was in another format. */
+/** A view of STRAT_RAW as the 4 columns, when it was in another format (a view, so big inputs aren't copied). */
 export const STRAT_CONVERTED = 'strat_converted'
 export const STRAT = 'strat'
 export const META_RAW = 'metadata_raw'
@@ -63,8 +63,9 @@ const plural = (n: number, word: string, pluralWord = `${word}s`) => `${n.toLoca
 
 /**
  * Validate the stratified table in STRAT_RAW and, if it has no errors, build STRAT. A table in
- * another format (detected, or as given) is first converted into STRAT_CONVERTED; STRAT_RAW is
- * left as loaded, so it can be validated again as a different format.
+ * another format (detected, or as given) is read through the STRAT_CONVERTED view. On success
+ * STRAT_RAW is dropped to free memory (inputs can be close to the 4 GB wasm limit), so reading the
+ * file as another format means loading it again. After an error it is kept.
  */
 export async function validateStratified(
   sql: Sql,
@@ -72,7 +73,7 @@ export async function validateStratified(
   requested: StratFormat | 'auto' = 'auto',
 ): Promise<Result<StratifiedSummary>> {
   await sql.query(`DROP TABLE IF EXISTS ${id(STRAT)}`)
-  await sql.query(`DROP TABLE IF EXISTS ${id(STRAT_CONVERTED)}`)
+  await sql.query(`DROP VIEW IF EXISTS ${id(STRAT_CONVERTED)}`)
   const issues: Issue[] = []
   const format = requested === 'auto' ? detectFormat(rawColumns) : requested
   let raw = id(STRAT_RAW)
@@ -85,7 +86,7 @@ export async function validateStratified(
       const [{ n }] = await sql.query(conv.check.sql)
       if (num(n) === 0) return { issues: [{ severity: 'error', message: conv.check.error }] }
     }
-    await sql.query(`CREATE TABLE ${id(STRAT_CONVERTED)} AS SELECT * FROM (${conv.select})`)
+    await sql.query(`CREATE VIEW ${id(STRAT_CONVERTED)} AS SELECT * FROM (${conv.select})`)
     raw = id(STRAT_CONVERTED)
     columns = await describeTable(sql, STRAT_CONVERTED)
     issues.push({ severity: 'info', message: conv.note })
@@ -191,6 +192,8 @@ export async function validateStratified(
     return { issues: [...issues, { severity: 'error', message: 'No rows have a contribution value.' }] }
   }
   if (num(sum.nonzero) === 0) issues.push({ severity: 'warning', message: 'Every contribution is zero.' })
+  await sql.query(`DROP VIEW IF EXISTS ${id(STRAT_CONVERTED)}`)
+  await sql.query(`DROP TABLE IF EXISTS ${id(STRAT_RAW)}`)
 
   return {
     issues,

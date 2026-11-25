@@ -92,7 +92,7 @@ Live at https://morganlangille.com/jarrvis-web/. The first prompts and most of v
 
 ### Done
 
-- Inputs: 4-column JarrVis format, PICRUSt2 contrib, legacy contrib and wide stratified, HUMAnN 2/3 stratified, auto-detected with a Format menu to override. Metadata file with any number of group columns. Optional taxonomy file (QIIME 2 `taxonomy.tsv`, DADA2 rank columns or a plain lineage) mapping sequence IDs to lineages. Validation messages and sample ID cross-checks for all of them. Tested by hand on real PICRUSt2 output with its QIIME 2 taxonomy (`test-data/picrust2/chemerin/`), which collapses correctly.
+- Inputs: 4-column JarrVis format, PICRUSt2 contrib, legacy contrib and wide stratified, HUMAnN 2/3 stratified, Microbiome Helper 2 stratified (tested on an 840 MB client table: loads in ~40 s), auto-detected with a Format menu to override. Metadata file with any number of group columns. Optional taxonomy file (QIIME 2 `taxonomy.tsv`, DADA2 rank columns or a plain lineage) mapping sequence IDs, or NCBI taxids for MH2's Kraken names, to lineages. Validation messages and sample ID cross-checks for all of them. Tested by hand on real PICRUSt2 output with its QIIME 2 taxonomy (`test-data/picrust2/chemerin/`), which collapses correctly.
 - Shared settings: group-by column, taxonomic level (phylum to species, by rank prefix), mean or total, function search, ranking by highest total or largest difference between groups.
 - Views, in page order: Sankey (click-to-highlight, draggable nodes, 4 to 30 taxa, choice of function count), stacked bar for the selected function (per group or per sample, absolute or relative), heatmap with a difference column, grouped table (optional higher-rank columns).
 - Export: SVG and PNG of each chart, TSV of the full summary behind each view.
@@ -106,8 +106,9 @@ Live at https://morganlangille.com/jarrvis-web/. The first prompts and most of v
 - Choosing which samples or groups to include, and reordering groups (e.g. months)
 - Searching and picking individual taxa; picking individual functions for the Sankey beyond search and top N
 - Locking a highlight and side-by-side comparison of two groups
-- Microbiome Helper input
 - Testing on larger, real HUMAnN stratified files (only a tiny synthetic one has been tried)
+- Collapsing MH2 taxa to ranks with a real taxid → lineage file (e.g. from taxonkit); the matching is unit-tested only
+- A public MH2 example: the client table can't be published, so it would need a synthetic or public dataset
 
 ### Next: saved views and shareable links (design agreed in outline, decisions open)
 

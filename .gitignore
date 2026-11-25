@@ -25,3 +25,6 @@ dist-ssr
 
 # Large local test files
 test-data/large/
+
+# Client data (IMR): never commit
+test-data/mh2/

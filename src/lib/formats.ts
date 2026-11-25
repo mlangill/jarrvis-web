@@ -4,7 +4,7 @@
 import type { Column } from './load'
 import { sqlIdent as id } from './sql'
 
-export type StratFormat = 'jarrvis' | 'picrust2-contrib' | 'picrust2-legacy' | 'picrust2-wide' | 'humann'
+export type StratFormat = 'jarrvis' | 'picrust2-contrib' | 'picrust2-legacy' | 'picrust2-wide' | 'humann' | 'mh2'
 
 export const STRAT_FORMATS: { key: StratFormat; label: string; short: string }[] = [
   { key: 'jarrvis', label: '4-column (sample, taxon, function, contribution)', short: '4-column' },
@@ -12,6 +12,7 @@ export const STRAT_FORMATS: { key: StratFormat; label: string; short: string }[]
   { key: 'picrust2-legacy', label: 'PICRUSt2 legacy contributions', short: 'PICRUSt2 legacy contributions' },
   { key: 'picrust2-wide', label: 'PICRUSt2 wide stratified (pred_metagenome_strat, path_abun_strat)', short: 'PICRUSt2 wide stratified' },
   { key: 'humann', label: 'HUMAnN 2 or 3 stratified (gene families or pathways)', short: 'HUMAnN stratified' },
+  { key: 'mh2', label: 'Microbiome Helper 2 stratified (function|taxon rows, e.g. KO_Taxonomy)', short: 'Microbiome Helper 2 stratified' },
 ]
 
 export const formatShort = (f: StratFormat) => STRAT_FORMATS.find((x) => x.key === f)!.short
@@ -21,6 +22,9 @@ const HUMANN_SPECIAL = ['UNMAPPED', 'UNINTEGRATED', 'UNGROUPED']
 /** Suffixes HUMAnN adds to sample names in joined tables, e.g. "S1_Abundance-RPKs". */
 const HUMANN_SUFFIX = '_(Abundance|Coverage)(-[A-Za-z]+)?$'
 
+/** Microbiome Helper 2 rows for reads with a taxon but no function. */
+const MH2_SPECIAL = ['Unclassified']
+
 /** The format the columns look like. Anything unrecognized is treated as the 4-column format. */
 export function detectFormat(columns: Column[]): StratFormat {
   const names = columns.map((c) => c.name)
@@ -28,6 +32,7 @@ export function detectFormat(columns: Column[]): StratFormat {
   if (has('taxon_function_abun') || has('norm_taxon_function_contrib')) return 'picrust2-contrib'
   if (has('CountContributedByOTU') || has('ContributionPercentOfSample')) return 'picrust2-legacy'
   if (/^#/.test(names[0] ?? '')) return 'humann'
+  if (names.length >= 2 && /taxonomy$/i.test(names[0] ?? '')) return 'mh2'
   if (names.length >= 3 && names[1].toLowerCase() === 'sequence') return 'picrust2-wide'
   return 'jarrvis'
 }
@@ -97,6 +102,32 @@ export function conversion(format: Exclude<StratFormat, 'jarrvis'>, columns: Col
           sql: `SELECT count(*) AS n FROM ${raw} WHERE strpos(${feature}, '|') > 0`,
           error:
             'This HUMAnN table has no per-taxon rows (function|taxon). Use the stratified output, for example from humann_split_stratified_table, or the full joined table.',
+        },
+      }
+    }
+    case 'mh2': {
+      if (names.length < 2) {
+        return { error: wrongShape('Microbiome Helper 2 stratified output', 'a first column like "KO_Taxonomy" holding function|taxon, then one column per sample') }
+      }
+      const feature = id(names[0])
+      const special = MH2_SPECIAL.map((s) => `'${s}'`).join(', ')
+      return {
+        select: `
+          SELECT sample,
+                 trim(substr(${feature}, strpos(${feature}, '|') + 1)) AS taxon,
+                 split_part(${feature}, '|', 1) AS function,
+                 contribution
+          FROM (UNPIVOT ${raw} ON COLUMNS(* EXCLUDE (${feature})) INTO NAME sample VALUE contribution)
+          WHERE strpos(${feature}, '|') > 0
+            AND split_part(${feature}, '|', 1) NOT IN (${special})
+            AND ${nonZero('contribution')}`,
+        note:
+          `Read as Microbiome Helper 2 stratified output: ${names.length - 1} sample columns. Rows are function|taxon; ` +
+          `rows with an ${MH2_SPECIAL.join(', ')} function and zero values are left out. Taxa are Kraken names with their taxid ` +
+          `and no lineage, so collapsing to a rank needs a taxonomy file keyed by taxid or by the full name.`,
+        check: {
+          sql: `SELECT count(*) AS n FROM ${raw} WHERE strpos(${feature}, '|') > 0`,
+          error: 'This table has no function|taxon rows in its first column.',
         },
       }
     }
